@@ -1,30 +1,37 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
-def finding_text_blob(f: Dict[str, Any]) -> str:
+def finding_text_blob(finding: Dict[str, Any]) -> str:
+    """
+    Build a normalized text blob used to match remediation rules.
+    """
     parts: List[str] = []
-    for k in ("GeneratorId", "Title", "Description"):
-        v = f.get(k)
-        if v:
-            parts.append(str(v))
-    pf = f.get("ProductFields") or {}
-    for k in ("StandardsArn", "StandardsSubscriptionArn", "ControlId", "RuleId"):
-        if k in pf and pf[k]:
-            parts.append(str(pf[k]))
-    for t in (f.get("Types") or []):
-        parts.append(str(t))
+
+    for field in ("GeneratorId", "Title", "Description"):
+        value = finding.get(field)
+        if value:
+            parts.append(str(value))
+
+    product_fields = finding.get("ProductFields") or {}
+    for key in ("StandardsArn", "StandardsSubscriptionArn", "ControlId", "RuleId"):
+        if product_fields.get(key):
+            parts.append(str(product_fields[key]))
+
+    for finding_type in finding.get("Types", []):
+        parts.append(str(finding_type))
+
     return " | ".join(parts).lower()
 
 
-def match_any_contains(f: Dict[str, Any], needles: List[str]) -> bool:
-    blob = finding_text_blob(f)
-    return any(n.lower() in blob for n in needles if n)
+def match_any_contains(finding: Dict[str, Any], keywords: List[str]) -> bool:
+    blob = finding_text_blob(finding)
+    return any(keyword.lower() in blob for keyword in keywords if keyword)
 
 
-def resource_ids(f: Dict[str, Any]) -> List[str]:
+def extract_resource_ids(finding: Dict[str, Any]) -> List[str]:
     ids = []
-    for r in (f.get("Resources") or []):
-        rid = r.get("Id")
-        if rid:
-            ids.append(rid)
+    for resource in finding.get("Resources", []):
+        resource_id = resource.get("Id")
+        if resource_id:
+            ids.append(resource_id)
     return ids
