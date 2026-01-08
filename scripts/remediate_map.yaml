@@ -1,4 +1,7 @@
 rules:
+  # -------------------------
+  # S3 - Public exposure
+  # -------------------------
   - name: "S3 bucket public exposure"
     match_contains:
       - "s3"
@@ -8,6 +11,43 @@ rules:
     params: {}
     note: "Apply full S3 Public Access Block configuration to the bucket"
 
+  # -------------------------
+  # S3 - Baseline hardening
+  # -------------------------
+  - name: "S3 bucket default encryption missing"
+    match_contains:
+      - "s3"
+      - "bucket"
+      - "encryption"
+      - "not enabled"
+    action: "s3_enable_default_encryption"
+    params: {}
+    note: "Enable S3 default encryption (SSE-S3/AES256). Safe baseline control."
+
+  - name: "S3 bucket versioning disabled"
+    match_contains:
+      - "s3"
+      - "bucket"
+      - "versioning"
+      - "disabled"
+    action: "s3_enable_versioning"
+    params: {}
+    note: "Enable bucket versioning to support recovery and forensic retention."
+
+  # Optional - conservative: only if you are sure you want to enforce SSL-only
+  - name: "S3 bucket allows insecure transport (HTTP)"
+    match_contains:
+      - "s3"
+      - "insecure transport"
+      - "ssl"
+      - "tls"
+    action: "s3_enforce_ssl_only_policy"
+    params: {}
+    note: "Attach/merge a bucket policy statement requiring aws:SecureTransport = true (SSL/TLS only)."
+
+  # -------------------------
+  # Security Group - World open
+  # -------------------------
   - name: "World-open SSH/RDP on Security Group"
     match_contains:
       - "0.0.0.0/0"
@@ -19,6 +59,35 @@ rules:
       ports: [22, 3389]
     note: "Remove inbound rules open to the world (0.0.0.0/0) for SSH and RDP"
 
+  - name: "World-open database ports on Security Group"
+    match_contains:
+      - "0.0.0.0/0"
+      - "security group"
+      - "mysql"
+      - "postgres"
+      - "mssql"
+      - "oracle"
+    action: "sg_remove_world_open_ports"
+    params:
+      ports: [3306, 5432, 1433, 1521]
+    note: "Remove inbound rules open to the world for common database ports."
+
+  - name: "World-open high risk ports on Security Group"
+    match_contains:
+      - "0.0.0.0/0"
+      - "security group"
+      - "telnet"
+      - "ftp"
+      - "rdp"
+      - "ssh"
+    action: "sg_remove_world_open_ports"
+    params:
+      ports: [21, 23, 22, 3389]
+    note: "Remove world-open inbound for legacy/high-risk ports."
+
+  # -------------------------
+  # EBS / EC2 regional baseline
+  # -------------------------
   - name: "EBS encryption by default disabled"
     match_contains:
       - "ebs"
