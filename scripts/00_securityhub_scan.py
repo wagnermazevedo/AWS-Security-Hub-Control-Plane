@@ -1,11 +1,16 @@
 import argparse
 import csv
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from lib.aws_clients import client
-from lib.io_utils import compact_finding, ensure_dir, utc_ts, write_json, write_jsonl
-
+from lib.aws_clients import get_client
+from lib.io_utils import (
+    compact_finding,
+    ensure_directory,
+    utc_timestamp,
+    write_json,
+    write_jsonl,
+)
 
 def paginate_get_findings(sh, filters: Dict[str, Any], max_items: int = 2000) -> List[Dict[str, Any]]:
     findings: List[Dict[str, Any]] = []
