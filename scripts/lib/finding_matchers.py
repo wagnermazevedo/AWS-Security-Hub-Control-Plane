@@ -1,10 +1,7 @@
-from typing import Any, Dict, List
+from typing import Dict, List
 
 
-def finding_text_blob(finding: Dict[str, Any]) -> str:
-    """
-    Build a normalized text blob used to match remediation rules.
-    """
+def finding_text_blob(finding: Dict) -> str:
     parts: List[str] = []
 
     for field in ("GeneratorId", "Title", "Description"):
@@ -17,21 +14,20 @@ def finding_text_blob(finding: Dict[str, Any]) -> str:
         if product_fields.get(key):
             parts.append(str(product_fields[key]))
 
-    for finding_type in finding.get("Types", []):
-        parts.append(str(finding_type))
+    for t in finding.get("Types", []):
+        parts.append(str(t))
 
     return " | ".join(parts).lower()
 
 
-def match_any_contains(finding: Dict[str, Any], keywords: List[str]) -> bool:
+def match_any_contains(finding: Dict, keywords: List[str]) -> bool:
     blob = finding_text_blob(finding)
-    return any(keyword.lower() in blob for keyword in keywords if keyword)
+    return any(keyword.lower() in blob for keyword in keywords)
 
 
-def extract_resource_ids(finding: Dict[str, Any]) -> List[str]:
+def extract_resource_ids(finding: Dict) -> List[str]:
     ids = []
-    for resource in finding.get("Resources", []):
-        resource_id = resource.get("Id")
-        if resource_id:
-            ids.append(resource_id)
+    for r in finding.get("Resources", []):
+        if r.get("Id"):
+            ids.append(r["Id"])
     return ids
