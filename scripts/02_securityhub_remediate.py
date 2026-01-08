@@ -8,6 +8,144 @@ from lib.aws_clients import get_client
 from lib.io_utils import ensure_directory, utc_timestamp
 
 
+# ----------------------------
+# Helpers: target extraction
+# ----------------------------
+
+def _lower(s: Optional[str]) -> str:
+    return (s or "").lower()
+
+
+def extract_bucket_from_arn_or_id(resource_id: str) -> Optional[str]:
+    """
+    Accepts:
+      - arn:aws:s3:::bucket-name
+      - bucket-name
+      - s3://bucket-name
+    Returns:
+      - bucket-name or None
+    """
+    if not resource_id:
+        return None
+
+    rid = resource_id.strip()
+
+    if "arn:aws:s3:::" in rid:
+        return rid.split(":::")[-1].strip()
+
+    if rid.startswith("s3://"):
+        return rid.replace("s3://", "").strip("/")
+
+    # basic bucket-name heuristic
+    if "://" not in rid and "/" not in rid and ":" not in rid and len(rid) >= 3:
+        return rid
+
+    return None
+
+
+def find_s3_bucket_target(resources: List[Dict[str, Any]]) -> Optional[str]:
+    for r in resources:
+        r_type = _lower(r.get("type"))
+        r_id = r.get("id") or ""
+        if "s3" in r_type and "bucket" in r_type:
+            b = extract_bucket_from_arn_or_id(r_id)
+            if b:
+                return b
+
+    # fallback: try any id
+    for r in resources:
+        b = extract_bucket_from_arn_or_id(r.get("id") or "")
+        if b:
+            return b
+
+    return None
+
+
+def find_security_group_target(resources: List[Dict[str, Any]]) -> Optional[str]:
+    """
+    Return a security group id if found (sg-xxxx).
+    Security Hub may return:
+      - id: sg-xxxx
+      - id: arn:aws:ec2:region:acct:security-group/sg-xxxx
+    """
+    for r in resources:
+        rid = (r.get("id") or "").strip()
+        if rid.startswith("sg-"):
+            return rid
+        if "security-group/sg-" in rid:
+            return rid.split("security-group/")[-1]
+    return None
+
+
+# ----------------------------
+# Heuristic inference (best-effort)
+# ----------------------------
+
+def build_finding_blob(item: Dict[str, Any]) -> str:
+    f = item.get("finding", {}) or {}
+    norm = f.get("normalized", {}) or {}
+    raw = f.get("raw", {}) or {}
+
+    parts = []
+    for k in ("title", "generatorId"):
+        v = norm.get(k)
+        if v:
+            parts.append(str(v))
+    for k in ("Title", "GeneratorId", "Description"):
+        v = raw.get(k)
+        if v:
+            parts.append(str(v))
+
+    # include types
+    for t in (norm.get("types") or raw.get("Types") or []):
+        parts.append(str(t))
+
+    # include some product fields if present
+    pf = raw.get("ProductFields") or {}
+    for k in ("ControlId", "RuleId", "StandardsArn", "StandardsSubscriptionArn"):
+        if pf.get(k):
+            parts.append(str(pf.get(k)))
+
+    return " | ".join(parts).lower()
+
+
+def infer_action_if_possible(item: Dict[str, Any]) -> Tuple[str, Dict[str, Any], str]:
+    """
+    Returns (action_name, params, reason).
+    If cannot infer safely, returns ("manual", {}, "...").
+    """
+    blob = build_finding_blob(item)
+    f = item.get("finding", {}) or {}
+    norm = f.get("normalized", {}) or {}
+    resources = norm.get("resources", []) or []
+
+    # S3 public access
+    if find_s3_bucket_target(resources) and ("public" in blob or "block public access" in blob):
+        return "s3_public_access_block", {}, "Best-effort inference: S3 public exposure keywords detected"
+
+    # Security Group world-open (SSH/RDP)
+    if find_security_group_target(resources) and ("0.0.0.0/0" in blob or "world" in blob or "open" in blob):
+        # default ports
+        return "sg_remove_world_open_ports", {"ports": [22, 3389]}, "Best-effort inference: SG world-open exposure keywords detected"
+
+    # EBS encryption by default
+    if "ebs" in blob and "encryption by default" in blob:
+        return "enable_ebs_encryption_by_default", {}, "Best-effort inference: EBS encryption-by-default keyword detected"
+
+    # S3 encryption / versioning (conservative)
+    if find_s3_bucket_target(resources) and ("encryption" in blob and ("s3" in blob or "bucket" in blob)):
+        return "s3_enable_default_encryption", {}, "Best-effort inference: S3 encryption keyword detected"
+
+    if find_s3_bucket_target(resources) and ("versioning" in blob and ("s3" in blob or "bucket" in blob)):
+        return "s3_enable_versioning", {}, "Best-effort inference: S3 versioning keyword detected"
+
+    return "manual", {}, "Best-effort inference: no safe action inferred"
+
+
+# ----------------------------
+# Remediation handlers
+# ----------------------------
+
 def remediate_s3_public_access_block(s3, bucket: str, dry_run: bool) -> Tuple[bool, str]:
     if dry_run:
         return True, f"DRY-RUN: would enable S3 Public Access Block on bucket {bucket}"
@@ -24,63 +162,167 @@ def remediate_s3_public_access_block(s3, bucket: str, dry_run: bool) -> Tuple[bo
     return True, f"OK: enabled S3 Public Access Block on bucket {bucket}"
 
 
-def extract_bucket_from_arn_or_id(resource_id: str) -> Optional[str]:
+def remediate_s3_enable_default_encryption(s3, bucket: str, dry_run: bool) -> Tuple[bool, str]:
     """
-    Accepts:
-    - arn:aws:s3:::bucket-name
-    - bucket-name
-    Returns bucket-name or None.
+    Enables default encryption (SSE-S3/AES256). Safe baseline.
     """
-    if not resource_id:
-        return None
-    if "arn:aws:s3:::" in resource_id:
-        return resource_id.split(":::")[-1].strip()
-    # fallback: if it looks like a bucket name, accept it
-    if resource_id.startswith("s3://"):
-        return resource_id.replace("s3://", "").strip().strip("/")
-    if "://" not in resource_id and "/" not in resource_id and ":" not in resource_id:
-        return resource_id.strip()
-    return None
+    if dry_run:
+        return True, f"DRY-RUN: would enable default encryption (SSE-S3) on bucket {bucket}"
+
+    s3.put_bucket_encryption(
+        Bucket=bucket,
+        ServerSideEncryptionConfiguration={
+            "Rules": [
+                {
+                    "ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"},
+                    "BucketKeyEnabled": True,
+                }
+            ]
+        },
+    )
+    return True, f"OK: enabled default encryption (SSE-S3) on bucket {bucket}"
 
 
-def find_s3_bucket_target(resources: List[Dict[str, Any]]) -> Optional[str]:
-    """
-    Try to find an S3 bucket from normalized resources.
-    Works with types like:
-    - AwsS3Bucket
-    - awss3bucket
-    - s3_bucket
-    And IDs like:
-    - arn:aws:s3:::my-bucket
-    - my-bucket
-    """
-    for r in resources:
-        r_type = (r.get("type") or "").lower()
-        r_id = r.get("id") or ""
-        if "s3" in r_type and "bucket" in r_type:
-            bucket = extract_bucket_from_arn_or_id(r_id)
-            if bucket:
-                return bucket
-    # fallback: attempt extraction from any resource id
-    for r in resources:
-        bucket = extract_bucket_from_arn_or_id(r.get("id") or "")
-        if bucket:
-            return bucket
-    return None
+def remediate_s3_enable_versioning(s3, bucket: str, dry_run: bool) -> Tuple[bool, str]:
+    if dry_run:
+        return True, f"DRY-RUN: would enable versioning on bucket {bucket}"
 
+    s3.put_bucket_versioning(
+        Bucket=bucket,
+        VersioningConfiguration={"Status": "Enabled"},
+    )
+    return True, f"OK: enabled versioning on bucket {bucket}"
+
+
+def remediate_enable_ebs_encryption_by_default(ec2, dry_run: bool) -> Tuple[bool, str]:
+    if dry_run:
+        return True, "DRY-RUN: would enable EBS Encryption by Default for this region"
+
+    ec2.enable_ebs_encryption_by_default()
+    return True, "OK: enabled EBS Encryption by Default for this region"
+
+
+def remediate_sg_remove_world_open_ports(ec2, sg_id: str, ports: Optional[List[int]], dry_run: bool) -> Tuple[bool, str]:
+    """
+    Removes inbound rules open to the world for specified ports.
+    Also removes IPv6 ::/0 if found.
+    If ports is None or empty, removes ALL ports/ranges that are open to world (0.0.0.0/0 or ::/0).
+    """
+    desc = ec2.describe_security_groups(GroupIds=[sg_id])["SecurityGroups"][0]
+    ip_permissions = desc.get("IpPermissions", []) or []
+
+    def port_in_scope(from_p: Optional[int], to_p: Optional[int]) -> bool:
+        if not ports:
+            return True
+        if from_p is None or to_p is None:
+            return False
+        return any(from_p <= p <= to_p for p in ports)
+
+    to_revoke: List[Dict[str, Any]] = []
+
+    for perm in ip_permissions:
+        proto = perm.get("IpProtocol")
+        from_p = perm.get("FromPort")
+        to_p = perm.get("ToPort")
+
+        # Skip non-TCP/UDP if ports list is provided; if ports not provided, allow any protocol
+        if ports and proto not in ("tcp", "udp"):
+            continue
+
+        if not port_in_scope(from_p, to_p):
+            continue
+
+        ipv4_bad = [r for r in (perm.get("IpRanges") or []) if r.get("CidrIp") == "0.0.0.0/0"]
+        ipv6_bad = [r for r in (perm.get("Ipv6Ranges") or []) if r.get("CidrIpv6") == "::/0"]
+
+        if ipv4_bad or ipv6_bad:
+            revoke_perm: Dict[str, Any] = {"IpProtocol": proto}
+
+            # For -1 (all) protocol, FromPort/ToPort may not exist
+            if from_p is not None:
+                revoke_perm["FromPort"] = from_p
+            if to_p is not None:
+                revoke_perm["ToPort"] = to_p
+
+            if ipv4_bad:
+                revoke_perm["IpRanges"] = ipv4_bad
+            if ipv6_bad:
+                revoke_perm["Ipv6Ranges"] = ipv6_bad
+
+            to_revoke.append(revoke_perm)
+
+    if not to_revoke:
+        return True, f"NOOP: no world-open inbound rules matched on {sg_id}"
+
+    if dry_run:
+        return True, f"DRY-RUN: would revoke {len(to_revoke)} inbound permission(s) from {sg_id}: {to_revoke}"
+
+    ec2.revoke_security_group_ingress(GroupId=sg_id, IpPermissions=to_revoke)
+    return True, f"OK: revoked {len(to_revoke)} world-open inbound permission(s) from {sg_id}"
+
+
+# Action dispatcher
+def execute_action(
+    action_name: str,
+    params: Dict[str, Any],
+    item: Dict[str, Any],
+    clients: Dict[str, Any],
+    dry_run: bool
+) -> Tuple[bool, str]:
+    finding_norm = ((item.get("finding") or {}).get("normalized") or {})
+    resources = finding_norm.get("resources", []) or []
+
+    if action_name == "s3_public_access_block":
+        bucket = params.get("bucket") or find_s3_bucket_target(resources)
+        if not bucket:
+            return False, "Could not determine S3 bucket target"
+        return remediate_s3_public_access_block(clients["s3"], bucket, dry_run)
+
+    if action_name == "s3_enable_default_encryption":
+        bucket = params.get("bucket") or find_s3_bucket_target(resources)
+        if not bucket:
+            return False, "Could not determine S3 bucket target"
+        return remediate_s3_enable_default_encryption(clients["s3"], bucket, dry_run)
+
+    if action_name == "s3_enable_versioning":
+        bucket = params.get("bucket") or find_s3_bucket_target(resources)
+        if not bucket:
+            return False, "Could not determine S3 bucket target"
+        return remediate_s3_enable_versioning(clients["s3"], bucket, dry_run)
+
+    if action_name == "enable_ebs_encryption_by_default":
+        return remediate_enable_ebs_encryption_by_default(clients["ec2"], dry_run)
+
+    if action_name == "sg_remove_world_open_ports":
+        sg_id = params.get("security_group_id") or find_security_group_target(resources)
+        if not sg_id:
+            return False, "Could not determine Security Group target"
+        ports = params.get("ports")
+        return remediate_sg_remove_world_open_ports(clients["ec2"], sg_id, ports, dry_run)
+
+    return False, f"UNSUPPORTED_ACTION: {action_name}"
+
+
+# ----------------------------
+# Main
+# ----------------------------
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Security Hub Control Plane - Execute remediations from a single YAML control artifact"
+        description="Security Hub Control Plane - Execute remediations from the YAML control artifact"
     )
     ap.add_argument("--region", required=True)
     ap.add_argument("--profile", default=None)
-    ap.add_argument(
-        "--yaml",
-        required=True,
-        help="Path to the YAML control artifact (e.g., outputs/<ts>/securityhub_control_plane.yaml)",
-    )
+    ap.add_argument("--yaml", required=True, help="Path to the YAML control artifact generated by 00/01 scripts")
     ap.add_argument("--mode", choices=["dry-run", "apply"], default="dry-run")
+
+    # Governance switch: try to remediate as many as possible (best-effort inference)
+    ap.add_argument(
+        "--best-effort",
+        action="store_true",
+        help="Attempt to infer and execute safe remediations even for MANUAL items (recommended: use with dry-run first)"
+    )
+
     ap.add_argument("--output-dir", default="outputs")
     args = ap.parse_args()
 
@@ -89,7 +331,11 @@ def main():
     with open(args.yaml, "r", encoding="utf-8") as f:
         doc = yaml.safe_load(f) or {}
 
-    s3 = get_client("s3", region=args.region, profile=args.profile)
+    # Clients
+    clients = {
+        "s3": get_client("s3", region=args.region, profile=args.profile),
+        "ec2": get_client("ec2", region=args.region, profile=args.profile),
+    }
 
     executed_at = utc_timestamp()
     results = {
@@ -99,10 +345,10 @@ def main():
             "executedAt": executed_at,
             "region": args.region,
             "mode": args.mode,
+            "bestEffort": args.best_effort,
             "sourceYaml": args.yaml,
         },
         "spec": {
-            "results": [],
             "summary": {
                 "total": 0,
                 "executed": 0,
@@ -112,74 +358,91 @@ def main():
                 "ignored": 0,
                 "unsupported": 0,
                 "not_executed": 0,
+                "best_effort_executed": 0,
             },
+            "results": [],
         },
     }
 
-    items = (doc.get("spec", {}) or {}).get("items", []) or []
+    items = ((doc.get("spec") or {}).get("items") or [])
     results["spec"]["summary"]["total"] = len(items)
 
     for item in items:
-        action = (item.get("action") or {})
-        action_name = action.get("name", "manual")
-
-        decision = (item.get("decision") or {})
+        decision = item.get("decision", {}) or {}
         decision_type = decision.get("type", "MANUAL")
 
+        action = item.get("action", {}) or {}
+        action_name = action.get("name", "manual")
+        action_params = action.get("params", {}) or {}
+
         finding_norm = ((item.get("finding") or {}).get("normalized") or {})
-        resources = finding_norm.get("resources", []) or []
 
         ok = False
         msg = "MANUAL_REQUIRED"
+        executed = False
+        inferred = False
+        infer_reason = None
 
-        # Execute only if decision == AUTO and action != manual
+        # Decide whether to execute
         if decision_type == "AUTO" and action_name != "manual":
+            executed = True
+
+        elif args.best_effort and decision_type == "MANUAL":
+            # try to infer a safe action
+            inferred_action, inferred_params, reason = infer_action_if_possible(item)
+            if inferred_action != "manual":
+                inferred = True
+                infer_reason = reason
+                action_name = inferred_action
+                action_params = inferred_params
+                executed = True
+
+        if decision_type == "IGNORE":
+            msg = "IGNORED"
+            results["spec"]["summary"]["ignored"] += 1
+
+        elif executed:
             results["spec"]["summary"]["executed"] += 1
+            if inferred:
+                results["spec"]["summary"]["best_effort_executed"] += 1
+
             try:
-                if action_name == "s3_public_access_block":
-                    bucket = find_s3_bucket_target(resources)
-                    if not bucket:
-                        ok, msg = False, "Could not determine S3 bucket target from finding resources"
-                    else:
-                        ok, msg = remediate_s3_public_access_block(s3, bucket, dry_run)
-
-                else:
-                    ok, msg = False, f"UNSUPPORTED_ACTION: {action_name}"
-                    results["spec"]["summary"]["unsupported"] += 1
-
+                ok, msg = execute_action(action_name, action_params, item, clients, dry_run)
             except Exception as e:
                 ok, msg = False, f"ERROR: {type(e).__name__}: {e}"
+
+            if msg.startswith("UNSUPPORTED_ACTION"):
+                results["spec"]["summary"]["unsupported"] += 1
 
             if ok:
                 results["spec"]["summary"]["succeeded"] += 1
             else:
-                # If it was not already counted as unsupported, count as failed
+                # unsupported counts as failed as well? keep separate; count failed for other errors
                 if not msg.startswith("UNSUPPORTED_ACTION"):
                     results["spec"]["summary"]["failed"] += 1
 
         else:
-            # Not executed (manual/ignore/other)
-            if decision_type == "IGNORE":
-                msg = "IGNORED"
-                results["spec"]["summary"]["ignored"] += 1
-            elif decision_type == "MANUAL":
+            # not executed
+            if decision_type == "MANUAL":
                 msg = "MANUAL_REQUIRED"
                 results["spec"]["summary"]["manual_required"] += 1
             else:
                 msg = f"NOT_EXECUTED (decision={decision_type}, action={action_name})"
                 results["spec"]["summary"]["not_executed"] += 1
 
-        results["spec"]["results"].append(
-            {
-                "itemId": item.get("id"),
-                "findingId": finding_norm.get("findingId"),
-                "title": finding_norm.get("title"),
-                "decision": decision_type,
-                "action": action_name,
-                "ok": ok,
-                "message": msg,
-            }
-        )
+        results["spec"]["results"].append({
+            "itemId": item.get("id"),
+            "findingId": finding_norm.get("findingId"),
+            "title": finding_norm.get("title"),
+            "decision": decision_type,
+            "finalAction": action_name,
+            "finalParams": action_params,
+            "executed": executed,
+            "inferred": inferred,
+            "inferenceReason": infer_reason,
+            "ok": ok,
+            "message": msg,
+        })
 
     out_dir = os.path.join(args.output_dir, executed_at)
     ensure_directory(out_dir)
@@ -189,13 +452,14 @@ def main():
         yaml.safe_dump(results, f, sort_keys=False, allow_unicode=True)
 
     print(f"[OK] Results written: {out_path}")
-    print(f" - total items: {results['spec']['summary']['total']}")
-    print(f" - executed: {results['spec']['summary']['executed']}")
-    print(f" - succeeded: {results['spec']['summary']['succeeded']}")
-    print(f" - failed: {results['spec']['summary']['failed']}")
-    print(f" - manual_required: {results['spec']['summary']['manual_required']}")
-    print(f" - ignored: {results['spec']['summary']['ignored']}")
-    print(f" - unsupported: {results['spec']['summary']['unsupported']}")
+    s = results["spec"]["summary"]
+    print(f" - total: {s['total']}")
+    print(f" - executed: {s['executed']} (best-effort: {s['best_effort_executed']})")
+    print(f" - succeeded: {s['succeeded']}")
+    print(f" - failed: {s['failed']}")
+    print(f" - manual_required: {s['manual_required']}")
+    print(f" - ignored: {s['ignored']}")
+    print(f" - unsupported: {s['unsupported']}")
 
 
 if __name__ == "__main__":
