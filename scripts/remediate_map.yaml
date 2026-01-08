@@ -6,22 +6,23 @@ rules:
       - "block public access"
     action: "s3_public_access_block"
     params: {}
-    note: "Aplica PublicAccessBlock completo no bucket"
+    note: "Apply full S3 Public Access Block configuration to the bucket"
 
   - name: "World-open SSH/RDP on Security Group"
     match_contains:
       - "0.0.0.0/0"
       - "security group"
       - "ssh"
+      - "rdp"
     action: "sg_remove_world_open_ports"
     params:
       ports: [22, 3389]
-    note: "Remove regras inbound 0.0.0.0/0 para SSH/RDP"
+    note: "Remove inbound rules open to the world (0.0.0.0/0) for SSH and RDP"
 
-  - name: "EBS encryption by default"
+  - name: "EBS encryption by default disabled"
     match_contains:
       - "ebs"
       - "encryption by default"
     action: "enable_ebs_encryption_by_default"
     params: {}
-    note: "Habilita EBS Encryption by Default na região"
+    note: "Enable EBS encryption by default at the regional level"
