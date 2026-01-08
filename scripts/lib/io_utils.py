@@ -36,7 +36,7 @@ def safe_get(data: Dict[str, Any], *keys: str, default=None):
 
 def compact_finding(finding: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Reduce a Security Hub finding to a stable, audit-friendly evidence record.
+    Reduce a Security Hub finding into a stable, audit-friendly evidence record.
     """
     return {
         "Id": finding.get("Id"),
