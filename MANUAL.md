@@ -1,292 +1,314 @@
-# 📙 `USER_MANUAL.md`
+# 📘 USER MANUAL
 
-## AWS Security Hub as a Control Plane – User Manual
+## AWS Security Hub as a Control Plane (Unified YAML Flow)
 
 ---
 
 ## 1. Purpose
 
-This manual provides **operational guidance** for using the *AWS Security Hub as a Control Plane* framework.
+This manual describes how to operate the **AWS Security Hub as a Control Plane** framework using a **single execution path** and a **single YAML control artifact**.
 
-It explains how to:
+The framework enables teams to:
 
-* Collect security findings as audit evidence
-* Generate remediation plans from Security Hub findings
-* Execute controlled remediations
-* Validate remediation effectiveness
-* Maintain traceability for governance and compliance
+* Use AWS Security Hub as the **authoritative source of truth**
+* Export findings into a **remediation-ready YAML**
+* Decide and document remediation actions declaratively
+* Execute remediations in **dry-run** or **apply** mode
+* Preserve **audit-grade evidence** throughout the lifecycle
 
-This manual is intended for **Cloud Security Engineers, DevSecOps, GRC teams, and auditors**.
-
----
-
-## 2. Conceptual Overview
-
-In this framework, **AWS Security Hub is treated as the authoritative control plane**, not merely a reporting dashboard.
-
-Security operations follow a **closed-loop lifecycle**:
-
-```
-Detect → Plan → Remediate → Validate
-```
-
-Each phase produces **immutable, timestamped evidence**, suitable for audits and compliance assessments.
+Target audience:
+**Cloud Security Engineers, DevSecOps teams, Platform teams, and GRC/Audit professionals.**
 
 ---
 
-## 3. Prerequisites
+## 2. Core Design Principles
 
-### 3.1 Technical Requirements
+* **Security Hub is the Control Plane**
+* YAML is the **single source of truth**
+* Detection, decision, and execution are **strictly separated**
+* Automation is **governed**, not implicit
+* Every step produces **immutable, versioned evidence**
 
-* Python 3.9 or later
-* AWS CLI configured with valid credentials
-* Security Hub enabled in the target region
+There are **no alternative execution paths** and **no secondary output formats**.
 
-### 3.2 Required Python Packages
+---
+
+## 3. Unified Lifecycle
+
+The security lifecycle is strictly:
+
+```
+Detect → Export → Decide → Remediate → Validate
+```
+
+Mapped to scripts:
+
+| Phase           | Script                        | Output |
+| --------------- | ----------------------------- | ------ |
+| Detect & Export | `00_securityhub_scan.py`      | YAML   |
+| Decide          | `01_securityhub_plan.py`      | YAML   |
+| Remediate       | `02_securityhub_remediate.py` | YAML   |
+| Validate        | `00_securityhub_scan.py`      | YAML   |
+
+---
+
+## 4. Prerequisites
+
+### 4.1 Technical Requirements
+
+* Python **3.9+**
+* AWS credentials configured (profile or environment variables)
+* AWS Security Hub enabled in the target region
+
+### 4.2 Python Dependencies
 
 ```bash
 pip install boto3 pyyaml
 ```
 
-### 3.3 Required IAM Permissions (Minimum)
+### 4.3 IAM Permissions (Minimum)
 
-The execution role or user must have permissions for:
+**Evidence collection**
 
 * `securityhub:GetFindings`
 * `securityhub:GetEnabledStandards`
 * `securityhub:DescribeStandardsControls`
-* `s3:*` (for S3 remediation)
-* `ec2:*` (for Security Group and EBS remediation)
 
-> ⚠️ It is strongly recommended to use a **dedicated remediation role** with scoped permissions.
+**Remediation (depends on enabled controls)**
 
----
+* S3: `s3:PutPublicAccessBlock`, `s3:PutBucketEncryption`, `s3:PutBucketVersioning`, `s3:PutBucketPolicy`
+* EC2 / SG: `ec2:DescribeSecurityGroups`, `ec2:RevokeSecurityGroupIngress`
+* EBS: `ec2:EnableEbsEncryptionByDefault`
 
-## 4. Project Components
-
-### 4.1 Scripts Overview
-
-| Script                         | Description                                         |
-| ------------------------------ | --------------------------------------------------- |
-| `00_securityhub_scan.py`       | Collects Security Hub findings and control statuses |
-| `01_securityhub_plan.py`       | Generates a remediation plan (read-only)            |
-| `02_securityhub_remediate.py`  | Executes approved remediation actions               |
-| `99_lab_insecure_resources.py` | Creates insecure resources for testing              |
-| `remediate_map.yaml`           | Declarative remediation rule definitions            |
+> Recommended: use a **dedicated remediation role** with least privilege.
 
 ---
 
-## 5. Scan Phase – Evidence Collection
+## 5. Project Components
 
-### 5.1 Purpose
+### 5.1 Scripts
 
-The scan phase extracts **Security Hub findings and control statuses** and stores them as **versioned evidence**.
+| Script                         | Responsibility                                              |
+| ------------------------------ | ----------------------------------------------------------- |
+| `00_securityhub_scan.py`       | Export Security Hub findings into a YAML control artifact   |
+| `01_securityhub_plan.py`       | Apply remediation rules and promote items to AUTO or MANUAL |
+| `02_securityhub_remediate.py`  | Execute remediations from the YAML artifact                 |
+| `99_lab_insecure_resources.py` | Create insecure resources for testing                       |
 
-No remediation occurs during this phase.
+### 5.2 Configuration
+
+| File                        | Description                                           |
+| --------------------------- | ----------------------------------------------------- |
+| `config/remediate_map.yaml` | Declarative mapping of findings → remediation actions |
 
 ---
 
-### 5.2 Execution
+## 6. The YAML Control Artifact
 
-```bash
-python scripts/00_securityhub_scan.py \
-  --region us-east-1 \
-  --severity HIGH,CRITICAL \
-  --compliance FAILED
+All operations revolve around **one YAML file per execution**, stored under a timestamped directory:
+
+```
+outputs/YYYYMMDDTHHMMSSZ/securityhub_control_plane.yaml
+```
+
+This YAML contains:
+
+* Normalized finding data
+* Full raw Security Hub finding payload
+* Decision metadata (`AUTO`, `MANUAL`, `IGNORE`)
+* Remediation action and parameters
+* Governance guardrails
+
+### 6.1 YAML Structure (Simplified)
+
+```yaml
+apiVersion: shcp/v1
+kind: SecurityHubControlPlane
+metadata:
+  generatedAt: "2026-01-08T18:00:00Z"
+  region: "us-east-1"
+spec:
+  defaultMode: dry-run
+  items:
+    - id: item-000001
+      finding:
+        normalized: {...}
+        raw: {...}
+      decision:
+        type: AUTO
+        reason: "Matched rule: S3 bucket public exposure"
+      action:
+        name: s3_public_access_block
+        params: {}
 ```
 
 ---
 
-### 5.3 Outputs
-
-Each execution creates a timestamped directory:
-
-```
-outputs/YYYYMMDDTHHMMSSZ/
-```
-
-Containing:
-
-| File                   | Description                  |
-| ---------------------- | ---------------------------- |
-| `findings.jsonl`       | Canonical findings evidence  |
-| `findings.csv`         | Human-readable findings      |
-| `metadata.json`        | Scan context and filters     |
-| `controls_status.json` | Standards and control states |
-
-These files represent the **baseline security posture** at scan time.
+## 7. Step-by-Step Operation
 
 ---
 
-## 6. Planning Phase – Remediation Plan Generation
-
-### 6.1 Purpose
-
-The planning phase translates findings into **proposed remediation actions**, without making any changes.
-
-This step is **100% safe and read-only**.
-
----
-
-### 6.2 Execution
-
-```bash
-python scripts/01_securityhub_plan.py \
-  --findings outputs/<timestamp>/findings.jsonl \
-  --rules config/remediate_map.yaml \
-  --output outputs/<timestamp>/plan.json
-```
-
----
-
-### 6.3 Remediation Mapping Logic
-
-Remediation rules are defined declaratively in `remediate_map.yaml`.
-
-Each rule specifies:
-
-* Matching keywords (`match_contains`)
-* Action identifier (`action`)
-* Optional parameters (`params`)
-* Human-readable justification (`note`)
-
-This design enables **policy-driven remediation** without modifying code.
-
----
-
-### 6.4 Output
-
-`plan.json` contains:
-
-* All matched findings
-* Proposed remediation actions
-* Target resources
-* Parameters required for execution
-
-This file can be reviewed, approved, or archived.
-
----
-
-## 7. Remediation Phase – Controlled Execution
-
-### 7.1 Purpose
-
-The remediation phase executes approved actions defined in the plan.
-
-All remediations are **explicit and controlled**.
-
----
-
-### 7.2 Dry-Run (Mandatory)
-
-```bash
-python scripts/02_securityhub_remediate.py \
-  --region us-east-1 \
-  --plan outputs/<timestamp>/plan.json \
-  --dry-run
-```
-
-**Dry-run characteristics:**
-
-* No AWS resources are modified
-* All actions are logged
-* Execution intent is fully visible
-
----
-
-### 7.3 Apply Remediation
-
-After validation and approval:
-
-```bash
-python scripts/02_securityhub_remediate.py \
-  --region us-east-1 \
-  --plan outputs/<timestamp>/plan.json
-```
-
----
-
-### 7.4 Outputs
-
-Each remediation run generates a new evidence folder:
-
-```
-outputs/YYYYMMDDTHHMMSSZ/remediation_results.json
-```
-
-This file records:
-
-* Each attempted action
-* Target resources
-* Execution result
-* Errors or exceptions (if any)
-
----
-
-## 8. Validation Phase – Post-Remediation Evidence
-
-### 8.1 Purpose
-
-Validation confirms that remediation actions effectively resolved the findings.
-
----
-
-### 8.2 Execution
+### 7.1 Step 1 — Export Findings (Detection)
 
 ```bash
 python scripts/00_securityhub_scan.py --region us-east-1
 ```
 
----
+This step:
 
-### 8.3 Validation Criteria
+* Queries Security Hub
+* Normalizes findings
+* Preserves the **full raw payload**
+* Produces the initial YAML artifact
 
-* Findings should transition to `RESOLVED`, `SUPPRESSED`, or no longer appear
-* Control statuses should reflect compliance
-* Evidence should demonstrate posture improvement
-
----
-
-## 9. Operational Guidelines
-
-* Always retain **pre- and post-remediation evidence**
-* Use **version control** for remediation rules
-* Review `plan.json` before execution
-* Avoid running remediation scripts without dry-run
-* Separate detection, approval, and execution roles when possible
+All items are marked `MANUAL` by default.
 
 ---
 
-## 10. Audit and Compliance Alignment
+### 7.2 Step 2 — Decide Remediation (Planning)
 
-This framework supports:
+```bash
+python scripts/01_securityhub_plan.py \
+  --input-yaml outputs/<timestamp>/securityhub_control_plane.yaml \
+  --rules config/remediate_map.yaml \
+  --output-yaml outputs/<timestamp>/securityhub_control_plane.planned.yaml
+```
 
-* Evidence traceability
-* Change justification
-* Control validation
-* Continuous compliance monitoring
+This step:
 
-It can be integrated with:
+* Applies `remediate_map.yaml`
+* Promotes findings to `decision: AUTO` when matched
+* Documents the **reason for each decision**
+* Produces a **planned YAML** (still a single artifact type)
 
-* AWS Audit Manager
-* ISO 27001 / ISO 22301 frameworks
+No AWS resources are modified.
+
+---
+
+### 7.3 Step 3 — Execute Remediation
+
+#### Dry-run (mandatory)
+
+```bash
+python scripts/02_securityhub_remediate.py \
+  --region us-east-1 \
+  --yaml outputs/<timestamp>/securityhub_control_plane.planned.yaml \
+  --mode dry-run
+```
+
+#### Apply (after approval)
+
+```bash
+python scripts/02_securityhub_remediate.py \
+  --region us-east-1 \
+  --yaml outputs/<timestamp>/securityhub_control_plane.planned.yaml \
+  --mode apply
+```
+
+Only items with:
+
+```yaml
+decision:
+  type: AUTO
+```
+
+are executed.
+
+---
+
+### 7.4 Best-Effort Remediation (Optional)
+
+To remediate **as many safe controls as possible**, even when the decision is `MANUAL`:
+
+```bash
+python scripts/02_securityhub_remediate.py \
+  --region us-east-1 \
+  --yaml outputs/<timestamp>/securityhub_control_plane.planned.yaml \
+  --mode dry-run \
+  --best-effort
+```
+
+Best-effort mode:
+
+* Uses keyword inference
+* Executes only **safe baseline remediations**
+* Must always be validated in dry-run first
+
+---
+
+### 7.5 Step 4 — Validate (Post-Remediation)
+
+```bash
+python scripts/00_securityhub_scan.py --region us-east-1
+```
+
+Validation confirms:
+
+* Findings are resolved or no longer present
+* Control status improved
+* Evidence shows before/after posture
+
+---
+
+## 8. Supported Auto-Remediations (Release 1)
+
+* S3 Public Access Block
+* S3 Default Encryption (SSE-S3)
+* S3 Versioning
+* S3 HTTPS-only (SecureTransport)
+* Security Group world-open port removal
+* EBS Encryption by Default (regional)
+
+---
+
+## 9. Evidence and Audit Considerations
+
+* Every step produces **timestamped YAML evidence**
+* Decisions are explicit and reviewable
+* Dry-run enforces safe change control
+* The YAML artifact doubles as:
+
+  * evidence
+  * remediation plan
+  * execution input
+
+This design aligns naturally with:
+
+* ISO 27001 / ISO 22301
 * CIS Benchmarks
-* NIST CSF / SP 800-53
+* NIST CSF / 800-53
+* AWS Audit Manager workflows
+
+---
+
+## 10. Operational Guidelines
+
+* Always retain **pre- and post-remediation YAML**
+* Treat YAML as a **change-controlled artifact**
+* Never run `--best-effort` directly in `apply`
+* Start with S3 and SG controls before expanding scope
+* Review remediation rules regularly
 
 ---
 
 ## 11. Limitations
 
-* Not all findings can be auto-remediated
-* Some services require manual intervention (e.g., RDS encryption)
-* Multi-account support requires extension (roadmap item)
+* Not all findings are safe to auto-remediate
+* IAM, KMS, and logging controls often require approval
+* Multi-account execution requires extension (future work)
 
 ---
 
 ## 12. Conclusion
 
-This manual describes a **governed, auditable, and extensible** approach to cloud security operations using AWS Security Hub as a control plane.
+This framework turns AWS Security Hub into a **true Security Control Plane**.
 
-The framework enables teams to move from **visibility to action**, without sacrificing control or auditability.
+It provides:
 
----
+* Deterministic automation
+* Explicit governance
+* Audit-grade evidence
+* Safe, extensible remediation
+
+The result is **security as a controlled system**, not a reactive dashboard.
+
