@@ -2,59 +2,50 @@ import argparse
 import random
 import string
 
-from lib.aws_clients import client
+from lib.aws_clients import get_client
 
 
-def rand_suffix(n=8):
-    return "".join(random.choice(string.ascii_lowercase + string.digits) for _ in range(n))
+def random_suffix(size=6):
+    return "".join(random.choice(string.ascii_lowercase + string.digits) for _ in range(size))
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Lab insecure resources for Security Hub validation")
-    ap.add_argument("--region", required=True)
-    ap.add_argument("--profile", default=None)
-    ap.add_argument("--create-s3", action="store_true")
-    ap.add_argument("--create-sg", action="store_true")
-    ap.add_argument("--vpc-id", default=None, help="Obrigatório se --create-sg")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser(description="Create insecure AWS resources for Security Hub testing")
+    parser.add_argument("--region", required=True)
+    parser.add_argument("--create-s3", action="store_true")
+    parser.add_argument("--create-sg", action="store_true")
+    parser.add_argument("--vpc-id")
+    args = parser.parse_args()
 
-    s3c = client("s3", region=args.region, profile=args.profile)
-    ec2 = client("ec2", region=args.region, profile=args.profile)
+    s3 = get_client("s3", region=args.region)
+    ec2 = get_client("ec2", region=args.region)
 
     if args.create_s3:
-        bucket = f"lab-insecure-shcp-{rand_suffix()}"
-        # create_bucket difere em us-east-1
-        if args.region == "us-east-1":
-            s3c.create_bucket(Bucket=bucket)
-        else:
-            s3c.create_bucket(
-                Bucket=bucket,
-                CreateBucketConfiguration={"LocationConstraint": args.region},
-            )
-        # NÃO aplica PublicAccessBlock (inseguro)
-        print(f"[OK] Bucket criado (inseguro): {bucket}")
+        bucket = f"insecure-shcp-{random_suffix()}"
+        s3.create_bucket(Bucket=bucket)
+        print(f"[OK] Insecure S3 bucket created: {bucket}")
 
     if args.create_sg:
         if not args.vpc_id:
-            raise SystemExit("--vpc-id é obrigatório para criar SG")
+            raise SystemExit("--vpc-id is required for Security Group creation")
+
         sg = ec2.create_security_group(
-            GroupName=f"lab-insecure-sg-{rand_suffix()}",
-            Description="Insecure SG for Security Hub findings",
+            GroupName=f"insecure-sg-{random_suffix()}",
+            Description="World-open SSH for Security Hub testing",
             VpcId=args.vpc_id,
         )["GroupId"]
 
         ec2.authorize_security_group_ingress(
             GroupId=sg,
-            IpPermissions=[
-                {
-                    "IpProtocol": "tcp",
-                    "FromPort": 22,
-                    "ToPort": 22,
-                    "IpRanges": [{"CidrIp": "0.0.0.0/0", "Description": "INSECURE SSH"}],
-                }
-            ],
+            IpPermissions=[{
+                "IpProtocol": "tcp",
+                "FromPort": 22,
+                "ToPort": 22,
+                "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
+            }]
         )
-        print(f"[OK] SG criado (inseguro): {sg} (SSH aberto 0.0.0.0/0)")
+
+        print(f"[OK] Insecure Security Group created: {sg}")
 
 
 if __name__ == "__main__":
