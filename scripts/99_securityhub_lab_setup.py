@@ -31,43 +31,67 @@ def _code(err):
     return err.response.get("Error", {}).get("Code", "")
 
 
+def _config_bucket(c, account_id, region):
+    bucket = f"shcp-config-{account_id}-{region}"
+    kwargs = {} if region == "us-east-1" else {"CreateBucketConfiguration": {"LocationConstraint": region}}
+    try:
+        c["s3"].create_bucket(Bucket=bucket, **kwargs)
+    except ClientError as err:
+        if _code(err) != "BucketAlreadyOwnedByYou":
+            raise
+    c["s3"].put_public_access_block(Bucket=bucket, PublicAccessBlockConfiguration={k: True for k in BPA_KEYS})
+    c["s3"].put_bucket_policy(Bucket=bucket, Policy=json.dumps({
+        "Version": "2012-10-17",
+        "Statement": [
+            {"Sid": "ConfigAclCheck", "Effect": "Allow", "Principal": {"Service": "config.amazonaws.com"},
+             "Action": ["s3:GetBucketAcl", "s3:ListBucket"], "Resource": f"arn:aws:s3:::{bucket}",
+             "Condition": {"StringEquals": {"AWS:SourceAccount": account_id}}},
+            {"Sid": "ConfigWrite", "Effect": "Allow", "Principal": {"Service": "config.amazonaws.com"},
+             "Action": "s3:PutObject", "Resource": f"arn:aws:s3:::{bucket}/AWSLogs/{account_id}/Config/*",
+             "Condition": {"StringEquals": {"s3:x-amz-acl": "bucket-owner-full-control",
+                                            "AWS:SourceAccount": account_id}}},
+        ]}))
+    return bucket
+
+
 def enable_config(c, account_id, region):
-    if c["config"].describe_configuration_recorders().get("ConfigurationRecorders"):
-        name = c["config"].describe_configuration_recorders()["ConfigurationRecorders"][0]["name"]
+    """Garante as três peças do AWS Config, cada uma de forma independente:
+    o gravador, o canal de entrega (sem ele o gravador não liga) e o gravador ligado.
+    Uma conta pode já ter o gravador e não ter o canal, por exemplo depois de um
+    setup antigo apagado pela metade."""
+    cfg = c["config"]
+    # Gravadores vinculados a serviço (servicePrincipal) pertencem a outro serviço da AWS: não são nossos.
+    recorders = [r for r in cfg.describe_configuration_recorders().get("ConfigurationRecorders", [])
+                 if not r.get("servicePrincipal")]
+    if recorders:
+        name = recorders[0]["name"]
+        print(f"[OK] Gravador do AWS Config já existia ({name})")
     else:
-        bucket = f"shcp-config-{account_id}-{region}"
-        kwargs = {} if region == "us-east-1" else {"CreateBucketConfiguration": {"LocationConstraint": region}}
-        try:
-            c["s3"].create_bucket(Bucket=bucket, **kwargs)
-        except ClientError as err:
-            if _code(err) != "BucketAlreadyOwnedByYou":
-                raise
-        c["s3"].put_public_access_block(Bucket=bucket, PublicAccessBlockConfiguration={k: True for k in BPA_KEYS})
-        c["s3"].put_bucket_policy(Bucket=bucket, Policy=json.dumps({
-            "Version": "2012-10-17",
-            "Statement": [
-                {"Sid": "ConfigAclCheck", "Effect": "Allow", "Principal": {"Service": "config.amazonaws.com"},
-                 "Action": ["s3:GetBucketAcl", "s3:ListBucket"], "Resource": f"arn:aws:s3:::{bucket}",
-                 "Condition": {"StringEquals": {"AWS:SourceAccount": account_id}}},
-                {"Sid": "ConfigWrite", "Effect": "Allow", "Principal": {"Service": "config.amazonaws.com"},
-                 "Action": "s3:PutObject", "Resource": f"arn:aws:s3:::{bucket}/AWSLogs/{account_id}/Config/*",
-                 "Condition": {"StringEquals": {"s3:x-amz-acl": "bucket-owner-full-control",
-                                                "AWS:SourceAccount": account_id}}},
-            ]}))
         try:
             c["iam"].create_service_linked_role(AWSServiceName="config.amazonaws.com")
         except ClientError as err:
             if _code(err) != "InvalidInput":  # já existe
                 raise
         name = "default"
-        c["config"].put_configuration_recorder(ConfigurationRecorder={
+        cfg.put_configuration_recorder(ConfigurationRecorder={
             "name": name,
             "roleARN": f"arn:aws:iam::{account_id}:role/aws-service-role/config.amazonaws.com/AWSServiceRoleForConfig",
             "recordingGroup": {"allSupported": True, "includeGlobalResourceTypes": True},
         })
-        c["config"].put_delivery_channel(DeliveryChannel={"name": "default", "s3BucketName": bucket})
-        print(f"[OK] AWS Config configurado (bucket {bucket})")
-    c["config"].start_configuration_recorder(ConfigurationRecorderName=name)
+        print("[OK] Gravador do AWS Config criado")
+
+    if cfg.describe_delivery_channels().get("DeliveryChannels"):
+        print("[OK] Canal de entrega do AWS Config já existia")
+    else:
+        bucket = _config_bucket(c, account_id, region)
+        cfg.put_delivery_channel(DeliveryChannel={"name": "default", "s3BucketName": bucket})
+        print(f"[OK] Canal de entrega do AWS Config criado (bucket {bucket})")
+
+    status = cfg.describe_configuration_recorder_status(ConfigurationRecorderNames=[name]).get("ConfigurationRecordersStatus", [])
+    if status and status[0].get("recording"):
+        print("[OK] AWS Config já estava gravando")
+        return
+    cfg.start_configuration_recorder(ConfigurationRecorderName=name)
     print("[OK] AWS Config gravando")
 
 
