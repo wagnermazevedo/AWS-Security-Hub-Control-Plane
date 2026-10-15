@@ -61,28 +61,27 @@ Pense em três etapas, cada uma com uma responsabilidade só:
 ```bash
 cd ~
 git clone https://github.com/wagnermazevedo/AWS-Security-Hub-Control-Plane.git
-cd AWS-Security-Hub-Control-Plane
-pip3 install --user -r requirements.txt
+pip3 install --user -r ~/AWS-Security-Hub-Control-Plane/requirements.txt
 ```
 
 **2. Monte o laboratório**
 
 ```bash
-python3 scripts/99_securityhub_lab_setup.py --region us-east-1
+python3 ~/AWS-Security-Hub-Control-Plane/scripts/99_securityhub_lab_setup.py --region us-east-1
 ```
 
 O script 99 prepara tudo para os outros scripts: liga o AWS Config, o Security Hub e o padrão FSBP, guarda como a conta estava, desliga o Block Public Access da conta e a criptografia de EBS por padrão, e sobe um CloudFormation com um bucket público e um security group aberto.
 
 Uma dica: o S3.8 e o EC2.2 aparecem em minutos, mas o S3.1 e o EC2.7 são avaliados periodicamente e podem levar algumas horas. Vale rodar o setup com antecedência.
 
-**3. Rode o ciclo** (sempre de dentro da pasta do repositório)
+**3. Rode o ciclo** (tudo a partir do `$HOME`)
 
 ```bash
-cd ~/AWS-Security-Hub-Control-Plane
-python3 scripts/00_securityhub_scan.py --region us-east-1
-python3 scripts/01_securityhub_plan.py
-python3 scripts/02_securityhub_remediate.py --region us-east-1 --mode dry-run
-python3 scripts/02_securityhub_remediate.py --region us-east-1 --mode apply
+cd ~
+python3 ~/AWS-Security-Hub-Control-Plane/scripts/00_securityhub_scan.py --region us-east-1
+python3 ~/AWS-Security-Hub-Control-Plane/scripts/01_securityhub_plan.py
+python3 ~/AWS-Security-Hub-Control-Plane/scripts/02_securityhub_remediate.py --region us-east-1 --mode dry-run
+python3 ~/AWS-Security-Hub-Control-Plane/scripts/02_securityhub_remediate.py --region us-east-1 --mode apply
 ```
 
 Não precisa passar caminho nenhum. O scan grava em `outputs/<timestamp>/`, o plan pega sozinho o scan mais recente e grava `outputs/remediation_plan.yaml`, e o remediate lê esse plano. Se quiser usar um scan específico, passe `--input-yaml` para o plan (e `--yaml` para o remediate).
@@ -96,7 +95,7 @@ Se preferir, o orquestrador do template faz tudo de uma vez (rode a partir do `$
 **4. Arrume a casa**
 
 ```bash
-python3 scripts/99_securityhub_lab_setup.py --region us-east-1 --destroy
+python3 ~/AWS-Security-Hub-Control-Plane/scripts/99_securityhub_lab_setup.py --region us-east-1 --destroy
 ```
 
 Remove o laboratório e devolve a conta exatamente como estava antes do setup. O Security Hub e o Config continuam ligados.
@@ -122,7 +121,7 @@ Esse é o melhor jeito de aprender como o repositório funciona. Usando o **Guar
 3. **Escreva a correção (se for AUTO).** Crie `remediate/guardduty_1.py` com uma função `run(clients, ctx, dry_run)` que devolve `ok`, `message` e `changes`. Em dry-run ela só descreve o que faria. Depois registre o nome da ação em `remediate/__init__.py`.
 4. **Precisa de outro serviço da AWS?** Adicione o nome dele em `SERVICES`, no `lib/aws.py`.
 5. **Recurso com ID próprio?** Se o controle aponta para um recurso (como um bucket), ensine o `resource_locator` em `scanner/findings.py` a achar o identificador dele, e o `resource_tags` em `scanner/resources.py` a ler as tags, para as exceções funcionarem.
-6. **Coloque no laboratório e teste.** Crie o caso inseguro no `lab_insecure/insecure-stack.yaml` (ou no script 99, para configurações de conta), adicione o finding falso em `tests/fakes.py` e rode `python3 -m unittest discover -s tests -v`.
+6. **Coloque no laboratório e teste.** Crie o caso inseguro no `lab_insecure/insecure-stack.yaml` (ou no script 99, para configurações de conta), adicione o finding falso em `tests/fakes.py` e rode `python3 -m unittest discover -s ~/AWS-Security-Hub-Control-Plane/tests -v`.
 
 ### O que fica salvo em cada execução
 
@@ -143,7 +142,7 @@ O remediate grava JSON, CSV e Markdown, mas não YAML, para o `test-control-plan
 ### Testes
 
 ```bash
-python3 -m unittest discover -s tests -v
+python3 -m unittest discover -s ~/AWS-Security-Hub-Control-Plane/tests -v
 ```
 
 Os testes rodam o ciclo inteiro numa conta simulada, sem precisar de AWS, e validam cada chamada contra o modelo oficial da API do botocore. Se você escrever um parâmetro errado, o teste avisa antes da AWS.
@@ -207,10 +206,10 @@ Instead of just **looking** at Security Hub, we **act** on it. The code reads th
 
 ```bash
 cd ~ && git clone https://github.com/wagnermazevedo/AWS-Security-Hub-Control-Plane.git
-cd AWS-Security-Hub-Control-Plane && pip3 install --user -r requirements.txt
-python3 scripts/99_securityhub_lab_setup.py --region us-east-1           # build the lab
+pip3 install --user -r ~/AWS-Security-Hub-Control-Plane/requirements.txt
+python3 ~/AWS-Security-Hub-Control-Plane/scripts/99_securityhub_lab_setup.py --region us-east-1           # build the lab
 ~/AWS-Security-Hub-Control-Plane/test-control-plane.sh AWS-Security-Hub-Control-Plane dry-run
-python3 scripts/99_securityhub_lab_setup.py --region us-east-1 --destroy # clean up
+python3 ~/AWS-Security-Hub-Control-Plane/scripts/99_securityhub_lab_setup.py --region us-east-1 --destroy # clean up
 ```
 
 ### Adding a new control
@@ -224,4 +223,4 @@ python3 scripts/99_securityhub_lab_setup.py --region us-east-1 --destroy # clean
 
 ### Outputs and tests
 
-Every run writes a new `outputs/<timestamp>/` folder (YAML, JSON, CSV for Athena, and `summary.md`) that is never overwritten. Offline tests: `python3 -m unittest discover -s tests -v`.
+Every run writes a new `outputs/<timestamp>/` folder (YAML, JSON, CSV for Athena, and `summary.md`) that is never overwritten. Offline tests: `python3 -m unittest discover -s ~/AWS-Security-Hub-Control-Plane/tests -v`.
