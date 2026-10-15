@@ -81,7 +81,7 @@ def main():
         item["decision"] = {"type": decision, "reason": reason}
         item["action"] = {"name": action, "params": {}}
         if decision == "AUTO":
-            item["expected_state"] = EXPECTED.get(item["control"], "conforme")
+            item["expected_state"] = (controls.get(item["control"]) or {}).get("expected") or EXPECTED.get(item["control"], "conforme")
             note = (controls.get(item["control"]) or {}).get("note")
             if note:
                 item["action"]["note"] = note

@@ -15,7 +15,7 @@ from collections import Counter
 import _bootstrap  # noqa: F401
 
 from lib import API_VERSION
-from lib.aws import client, session
+from lib.aws import SERVICES, client, session
 from lib.io import load_yaml, markdown_table, new_run_dir, repo_path, utc_timestamp, write_csv, write_json, write_text, write_yaml
 from scanner.findings import get_failed_findings, normalize
 from scanner.resources import COMPLIANT, resource_tags, verify
@@ -24,7 +24,7 @@ CSV_FIELDS = ["id", "control", "severity", "workflow_status", "resource_type", "
 
 
 def build_clients(sess):
-    return {svc: client(sess, svc) for svc in ("securityhub", "s3", "s3control", "ec2", "iam", "sts")}
+    return {svc: client(sess, svc) for svc in SERVICES}
 
 
 def main():

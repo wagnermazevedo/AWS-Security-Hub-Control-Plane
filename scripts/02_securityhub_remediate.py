@@ -18,7 +18,7 @@ import os
 import _bootstrap  # noqa: F401
 
 from lib import API_VERSION
-from lib.aws import client, session
+from lib.aws import SERVICES, client, session
 from lib.io import load_yaml, markdown_table, new_run_dir, utc_timestamp, write_csv, write_json, write_text
 from remediate import REGISTRY
 from scanner.findings import find_current
@@ -103,7 +103,7 @@ def main():
 
     dry_run = args.mode == "dry-run"
     sess = session(args.profile, args.region)
-    clients = {svc: client(sess, svc) for svc in ("securityhub", "s3", "s3control", "ec2", "iam", "sts")}
+    clients = {svc: client(sess, svc) for svc in SERVICES}
     # A conta vem sempre da credencial em uso, nunca do arquivo (que pode estar anonimizado).
     ctx = {"account_id": clients["sts"].get_caller_identity()["Account"], "region": args.region}
 

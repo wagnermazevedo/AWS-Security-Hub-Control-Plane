@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 690" width="1100" height="690" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif">
+<title>AWS Security Hub as Control Plane: a topologia</title>
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4b5563"/></marker><marker id="ahg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2e9e62"/></marker></defs>
+<rect x="0" y="0" width="1100" height="690" rx="16" fill="#ffffff"/>
+<text x="32" y="44" font-size="22" font-weight="700" fill="#111827">AWS Security Hub as Control Plane: a topologia</text>
+<text x="32" y="70" font-size="14" fill="#4b5563">Do finding ao recurso corrigido e de volta ao Security Hub, com o finding fechado</text>
+<rect x="32" y="96" width="1036" height="250" rx="14" fill="#f3f4f6" fill-opacity="0.45" stroke="#8b93a1" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="48" y="120" font-size="13" font-weight="700" fill="#2f3542" letter-spacing="0.4">CONTA AWS DE TESTES  ·  us-east-1</text>
+<rect x="56" y="130" width="180" height="96" rx="10" fill="#fdeeee" stroke="#d0473f" stroke-width="1.6"/>
+<text x="70" y="154" font-size="14.5" font-weight="700" fill="#7a1f1a">Conta S3</text>
+<rect x="190" y="139" width="36" height="20" rx="10" fill="#d0473f"/>
+<text x="208.0" y="153" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">S3.1</text>
+<text x="70" y="176" font-size="12.5" fill="#374151">Block Public Access</text>
+<text x="70" y="194" font-size="12.5" fill="#374151">desligado</text>
+<rect x="258" y="130" width="180" height="96" rx="10" fill="#fdeeee" stroke="#d0473f" stroke-width="1.6"/>
+<text x="272" y="154" font-size="14.5" font-weight="700" fill="#7a1f1a">Bucket S3</text>
+<rect x="392" y="139" width="36" height="20" rx="10" fill="#d0473f"/>
+<text x="410.0" y="153" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">S3.8</text>
+<text x="272" y="176" font-size="12.5" fill="#374151">público (e um com</text>
+<text x="272" y="194" font-size="12.5" fill="#374151">tag de exceção)</text>
+<rect x="460" y="130" width="180" height="96" rx="10" fill="#fdeeee" stroke="#d0473f" stroke-width="1.6"/>
+<text x="474" y="154" font-size="14.5" font-weight="700" fill="#7a1f1a">SG default</text>
+<rect x="587" y="139" width="43" height="20" rx="10" fill="#d0473f"/>
+<text x="608.5" y="153" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">EC2.2</text>
+<text x="474" y="176" font-size="12.5" fill="#374151">SSH aberto para</text>
+<text x="474" y="194" font-size="12.5" fill="#374151">a internet</text>
+<rect x="662" y="130" width="180" height="96" rx="10" fill="#fdeeee" stroke="#d0473f" stroke-width="1.6"/>
+<text x="676" y="154" font-size="14.5" font-weight="700" fill="#7a1f1a">EBS</text>
+<rect x="789" y="139" width="43" height="20" rx="10" fill="#d0473f"/>
+<text x="810.5" y="153" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">EC2.7</text>
+<text x="676" y="176" font-size="12.5" fill="#374151">sem criptografia</text>
+<text x="676" y="194" font-size="12.5" fill="#374151">por padrão</text>
+<rect x="864" y="130" width="180" height="96" rx="10" fill="#fdeeee" stroke="#d0473f" stroke-width="1.6"/>
+<text x="878" y="154" font-size="14.5" font-weight="700" fill="#7a1f1a">Root</text>
+<rect x="991" y="139" width="43" height="20" rx="10" fill="#d0473f"/>
+<text x="1012.5" y="153" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">IAM.4</text>
+<text x="878" y="176" font-size="12.5" fill="#374151">access key</text>
+<text x="878" y="194" font-size="12.5" fill="#374151">(fica MANUAL)</text>
+<rect x="56" y="252" width="200" height="74" rx="10" fill="#f3f4f6" stroke="#8b93a1" stroke-width="1.6"/>
+<text x="70" y="276" font-size="14.5" font-weight="700" fill="#2f3542">AWS Config</text>
+<text x="70" y="298" font-size="12.5" fill="#374151">avalia os recursos</text>
+<rect x="296" y="252" width="200" height="74" rx="10" fill="#f4f0fd" stroke="#7b5cd6" stroke-width="1.6"/>
+<text x="310" y="276" font-size="14.5" font-weight="700" fill="#3d2a7a">Security Hub</text>
+<text x="310" y="298" font-size="12.5" fill="#374151">padrão FSBP · findings ASFF</text>
+<path d="M146,226 L146,252" fill="none" stroke="#4b5563" stroke-width="1.8" marker-end="url(#ah)"/>
+<path d="M256,289 L296,289" fill="none" stroke="#4b5563" stroke-width="1.8" marker-end="url(#ah)"/>
+<rect x="32" y="390" width="1036" height="236" rx="14" fill="#eef4ff" fill-opacity="0.45" stroke="#3b6fd8" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="48" y="414" font-size="13" font-weight="700" fill="#1e3a7a" letter-spacing="0.4">REPOSITÓRIO  ·  AWS-Security-Hub-Control-Plane</text>
+<rect x="56" y="430" width="200" height="110" rx="10" fill="#fff6e5" stroke="#d18a14" stroke-width="1.6"/>
+<text x="70" y="454" font-size="14.5" font-weight="700" fill="#6b4405">99 · Lab setup</text>
+<text x="70" y="476" font-size="12.5" fill="#374151">liga Config, Security Hub</text>
+<text x="70" y="494" font-size="12.5" fill="#374151">e FSBP, cria o lab</text>
+<text x="70" y="512" font-size="12.5" fill="#374151">--destroy restaura a conta</text>
+<rect x="296" y="430" width="200" height="110" rx="10" fill="#eef4ff" stroke="#3b6fd8" stroke-width="1.6"/>
+<text x="310" y="454" font-size="14.5" font-weight="700" fill="#1e3a7a">00 · Scan</text>
+<rect x="443" y="439" width="43" height="20" rx="10" fill="#3b6fd8"/>
+<text x="464.5" y="453" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">SÓ LÊ</text>
+<text x="310" y="476" font-size="12.5" fill="#374151">busca findings FAILED</text>
+<text x="310" y="494" font-size="12.5" fill="#374151">e confere o recurso real</text>
+<text x="310" y="512" font-size="12.5" fill="#374151">(verified_state)</text>
+<rect x="536" y="430" width="200" height="110" rx="10" fill="#e9f7f8" stroke="#2a9aa6" stroke-width="1.6"/>
+<text x="550" y="454" font-size="14.5" font-weight="700" fill="#114e55">01 · Plan</text>
+<rect x="676" y="439" width="50" height="20" rx="10" fill="#2a9aa6"/>
+<text x="701.0" y="453" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">DECIDE</text>
+<text x="550" y="476" font-size="12.5" fill="#374151">AUTO · MANUAL</text>
+<text x="550" y="494" font-size="12.5" fill="#374151">SUPPRESS (exceção c/ dono)</text>
+<text x="550" y="512" font-size="12.5" fill="#374151">NO_ACTION (já conforme)</text>
+<rect x="776" y="430" width="268" height="110" rx="10" fill="#ecf8f1" stroke="#2e9e62" stroke-width="1.6"/>
+<text x="790" y="454" font-size="14.5" font-weight="700" fill="#145233">02 · Remediate</text>
+<rect x="977" y="439" width="57" height="20" rx="10" fill="#2e9e62"/>
+<text x="1005.5" y="453" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">DRY-RUN</text>
+<text x="790" y="476" font-size="12.5" fill="#374151">busca o finding de novo</text>
+<text x="790" y="494" font-size="12.5" fill="#374151">corrige → confere o recurso</text>
+<text x="790" y="512" font-size="12.5" fill="#374151">→ só então fecha o finding</text>
+<path d="M496,485 L536,485" fill="none" stroke="#4b5563" stroke-width="1.8" marker-end="url(#ah)"/>
+<path d="M736,485 L776,485" fill="none" stroke="#4b5563" stroke-width="1.8" marker-end="url(#ah)"/>
+<rect x="516" y="562" width="240" height="50" rx="10" fill="#e9f7f8" stroke="#2a9aa6" stroke-width="1.6"/>
+<text x="530" y="586" font-size="14.5" font-weight="700" fill="#114e55">config/remediate_map.yaml</text>
+<path d="M636,562 L636,542" fill="none" stroke="#4b5563" stroke-width="1.8" marker-end="url(#ah)"/>
+<path d="M156,430 L156,328" fill="none" stroke="#d18a14" stroke-width="1.8" marker-end="url(#ah)"/>
+<rect x="90.5" y="359" width="131.0" height="18" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="156" y="372" font-size="12" fill="#6b4405" text-anchor="middle">liga e cria o lab</text>
+<path d="M396,328 L396,430" fill="none" stroke="#3b6fd8" stroke-width="1.8" marker-end="url(#ah)"/>
+<rect x="351.5" y="359" width="89.0" height="18" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="396" y="372" font-size="12" fill="#1e3a7a" text-anchor="middle">GetFindings</text>
+<path d="M840,430 L840,368 L540,368 L540,306 L498,306" fill="none" stroke="#2e9e62" stroke-width="1.8" marker-end="url(#ahg)"/>
+<rect x="498.5" y="349" width="383.0" height="18" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="690" y="362" font-size="12" fill="#145233" text-anchor="middle">BatchUpdateFindings: RESOLVED · NOTIFIED · SUPPRESSED</text>
+<path d="M990,430 L990,246 L752,246 L752,228" fill="none" stroke="#2e9e62" stroke-width="1.8" marker-end="url(#ahg)"/>
+<rect x="931.5" y="299" width="117.0" height="18" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+<text x="990" y="312" font-size="12" fill="#145233" text-anchor="middle">corrige (apply)</text>
+<text x="550" y="660" font-size="12.5" fill="#4b5563" text-anchor="middle">Cada etapa grava em outputs/&lt;timestamp&gt;/: YAML, JSON (com o ASFF original), CSV para o Athena e summary.md</text>
+</svg>

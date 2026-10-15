@@ -8,6 +8,9 @@ from botocore.config import Config
 
 _RETRY = Config(retries={"max_attempts": 10, "mode": "adaptive"})
 
+# Serviços que o scan e o remediate usam. Controle novo que fala com outro serviço? Adicione aqui.
+SERVICES = ("securityhub", "s3", "s3control", "ec2", "iam", "sts")
+
 
 def session(profile: Optional[str] = None, region: Optional[str] = None) -> boto3.Session:
     profile = profile or os.getenv("AWS_PROFILE") or None

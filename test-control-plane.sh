@@ -5,29 +5,37 @@
 # ===================================================
 AWS_REGION="us-east-1"
 BASE_DIR="$HOME"
-DEFAULT_REPO="Security-Control-Plane"
+DEFAULT_REPO="AWS-Security-Hub-Control-Plane"
 
 get_repo_description() {
     local repo_name="$1"
     case "$repo_name" in
-        "Security-Control-Plane")
-            echo "Plano de controle central para agregação, normatização e remediação geral de findings do Security Hub." ;;
+        "AWS-Security-Control-Plane-Scripts")
+            echo "Ep. 1 · Template da série: contrato scan, plan e remediate, saídas versionadas e este orquestrador." ;;
+        "AWS-Security-Hub-Control-Plane")
+            echo "Ep. 2 · Security Hub como fonte da verdade e de compliance: corrige e fecha findings do FSBP." ;;
         "AWS-Governance-as-Control-Plane")
-            echo "Governança declarativa de postura, guardrails organizacionais e compliance contínuo." ;;
-        "IAM-Identity-as-Control-Plane")
-            echo "Controle de acesso, privilégios excessivos, gestão de credenciais e postura de identidades IAM." ;;
-        "AWS-Network-Traffic-as-Control-Plane")
-            echo "Inspeção e remediação de exposição de rede, Security Groups, VPCs e rotas de tráfego." ;;
-        "Credential-Exposure-Control-Plane")
-            echo "Detecção e resposta rápida para vazamento de chaves de acesso e credenciais expostas." ;;
-        "PaaS-Managed-Services-Permissions-Control-Plane")
-            echo "Segurança e permissões em serviços gerenciados (RDS, S3, DynamoDB, EKS, etc.)." ;;
-        "Software-Defined-Perimeter-as-Control-Plane")
-            echo "Gestão de perímetro definido por software, acesso zero-trust e regras de entrada/saída." ;;
-        "AWS-Security-Scripts")
-            echo "Coleção de utilitários e automações auxiliares para auditoria de segurança AWS." ;;
+            echo "Ep. 3 · Organizations, SCPs e tag policies como código, com detecção de drift." ;;
+        "AWS-Data-Protection-as-Control-Plane")
+            echo "Ep. 4 · KMS, criptografia, S3, Macie e Secrets Manager." ;;
+        "AWS-IAM-Identity-as-Control-Plane")
+            echo "Ep. 5 · Identidades, privilégios excessivos e CIEM." ;;
+        "AWS-Credentials-Exposure-Control-Plane")
+            echo "Ep. 6 · Vazamento de chaves e credenciais expostas: detecção, validação e resposta." ;;
+        "AWS-Network-Perimeter-as-Control-Plane")
+            echo "Ep. 7 · Perímetro e tráfego de rede: SDP, VPCs, Security Groups, NACLs e portas expostas." ;;
+        "AWS-PaaS-Managed-Services-Control-Plane")
+            echo "Ep. 8 · Permissões em serviços gerenciados (CodeBuild, CodeDeploy, SageMaker, RDS)." ;;
+        "AWS-Logging-Detection-as-Control-Plane")
+            echo "Ep. 9 · CloudTrail, GuardDuty e detecção: os registros que tudo o mais precisa." ;;
+        "AWS-Incident-Response-as-Control-Plane")
+            echo "Ep. 10 · Resposta a incidentes e remediação automática." ;;
+        "AWS-AI-Agents-Shift-Left-Control-Plane")
+            echo "Ep. 11 · Agentes de IA e shift-left: segurança antes do deploy." ;;
+        "AWS-Compute-Containers-as-Control-Plane")
+            echo "Ep. 12 (bônus) · EC2, ECS, EKS e Lambda." ;;
         *)
-            echo "Módulo dinâmico de segurança e controle de postura em nuvem." ;;
+            echo "Módulo de segurança criado a partir do template da série." ;;
     esac
 }
 
