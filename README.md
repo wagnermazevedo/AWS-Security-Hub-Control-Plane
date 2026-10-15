@@ -37,8 +37,8 @@ O IAM.4 fica manual de propósito: nem todo finding deve ser corrigido por scrip
 ### Contrato de Execução (Scan / Plan / Remediate)
 
 1. **Scan (somente leitura):** busca os findings `FAILED`, `ACTIVE` e em `NEW` ou `NOTIFIED` dos controles do mapa. Para cada um, consulta o recurso de verdade e grava `verified_state`, porque alguns controles são reavaliados periodicamente e o finding pode estar atrasado.
-2. **Plan (não muta):** cruza cada finding com o `config/remediate_map.yaml` e decide `AUTO`, `MANUAL`, `SUPPRESS` ou `NO_ACTION` (recurso já conforme).
-3. **Remediate (muta, controlado):** dry-run é o padrão. No apply, busca o finding de novo, corrige o recurso, confere o novo estado e só então chama `BatchUpdateFindings` com `RESOLVED`. Itens manuais viram `NOTIFIED` e exceções viram `SUPPRESSED`, sempre com nota.
+2. **Plan (não muda):** cruza cada finding com o `config/remediate_map.yaml` e decide `AUTO`, `MANUAL`, `SUPPRESS` ou `NO_ACTION` (recurso já conforme).
+3. **Remediate (muda, controlado):** dry-run é o padrão. No apply, busca o finding de novo, corrige o recurso, confere o novo estado e só então chama `BatchUpdateFindings` com `RESOLVED`. Itens manuais viram `NOTIFIED` e exceções viram `SUPPRESSED`, sempre com nota.
 
 > **Regra de Ouro:** nenhuma remediação acontece acidentalmente. Em dry-run, nenhuma API de escrita é chamada, nem no recurso nem no Security Hub.
 
@@ -135,7 +135,7 @@ AWS-Security-Hub-Control-Plane/
 ├── tests/                         # Testes offline e expected_findings.yaml
 ├── lib/                           # Clientes AWS e gravadores de saída
 ├── reports/                       # Relatórios consolidados
-├── outputs/                       # Saídas versionadas (imutáveis)
+├── outputs/                       # Saídas versionadas (imudaveis)
 └── docs/                          # Documentação
 ```
 
@@ -166,7 +166,7 @@ AWS Security Hub is usually treated as a dashboard. This module turns it into th
 ### Execution Contract
 
 1. **Scan (read-only):** fetches `FAILED`, `ACTIVE`, `NEW`/`NOTIFIED` findings for the mapped controls and records the real resource state as `verified_state`.
-2. **Plan (non-mutating):** matches each finding to `config/remediate_map.yaml` by control ID and decides `AUTO`, `MANUAL`, `SUPPRESS` or `NO_ACTION`.
+2. **Plan (non-mudating):** matches each finding to `config/remediate_map.yaml` by control ID and decides `AUTO`, `MANUAL`, `SUPPRESS` or `NO_ACTION`.
 3. **Remediate (controlled):** dry-run by default. In apply mode it re-fetches the finding, fixes the resource, verifies it, and only then calls `BatchUpdateFindings` with `RESOLVED`. Manual items become `NOTIFIED` and owned exceptions (`scp-exception` + `exception-owner` tags) become `SUPPRESSED`.
 
 ### Quick start (AWS CloudShell)
