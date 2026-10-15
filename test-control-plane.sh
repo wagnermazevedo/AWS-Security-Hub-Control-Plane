@@ -15,7 +15,7 @@ get_repo_description() {
         "AWS-Security-Hub-Control-Plane")
             echo "Ep. 2 · Security Hub como fonte da verdade e de compliance: corrige e fecha findings do FSBP." ;;
         "AWS-Governance-as-Control-Plane")
-            echo "Ep. 3 · Organizations, SCPs e tag policies como código, com detecção de drift." ;;
+            echo "Ep. 3 · Governança em três camadas: Control Tower, AWS Config e SCPs como código." ;;
         "AWS-Data-Protection-as-Control-Plane")
             echo "Ep. 4 · KMS, criptografia, S3, Macie e Secrets Manager." ;;
         "AWS-IAM-Identity-as-Control-Plane")

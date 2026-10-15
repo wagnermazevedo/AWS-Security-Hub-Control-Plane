@@ -75,17 +75,17 @@ O script 99 prepara tudo para os outros scripts: liga o AWS Config, o Security H
 
 Uma dica: o S3.8 e o EC2.2 aparecem em minutos, mas o S3.1 e o EC2.7 são avaliados periodicamente e podem levar algumas horas. Vale rodar o setup com antecedência.
 
-**3. Rode o ciclo**
+**3. Rode o ciclo** (sempre de dentro da pasta do repositório)
 
 ```bash
+cd ~/AWS-Security-Hub-Control-Plane
 python3 scripts/00_securityhub_scan.py --region us-east-1
-python3 scripts/01_securityhub_plan.py \
-  --input-yaml outputs/<timestamp>/securityhub_findings_export.yaml \
-  --rules config/remediate_map.yaml \
-  --output-yaml outputs/remediation_plan.yaml
-python3 scripts/02_securityhub_remediate.py --region us-east-1 --yaml outputs/remediation_plan.yaml --mode dry-run
-python3 scripts/02_securityhub_remediate.py --region us-east-1 --yaml outputs/remediation_plan.yaml --mode apply
+python3 scripts/01_securityhub_plan.py
+python3 scripts/02_securityhub_remediate.py --region us-east-1 --mode dry-run
+python3 scripts/02_securityhub_remediate.py --region us-east-1 --mode apply
 ```
+
+Não precisa passar caminho nenhum. O scan grava em `outputs/<timestamp>/`, o plan pega sozinho o scan mais recente e grava `outputs/remediation_plan.yaml`, e o remediate lê esse plano. Se quiser usar um scan específico, passe `--input-yaml` para o plan (e `--yaml` para o remediate).
 
 Se preferir, o orquestrador do template faz tudo de uma vez (rode a partir do `$HOME`):
 

@@ -31,7 +31,9 @@ def make_clients():
             "BlockPublicAcls": True, "IgnorePublicAcls": True, "BlockPublicPolicy": True, "RestrictPublicBuckets": True}}}),
         "ec2": Recorder("ec2", {"get_ebs_encryption_by_default": {"EbsEncryptionByDefault": True}}),
         "iam": Recorder("iam"),
-        "config": Recorder("config", {"describe_configuration_recorders": {"ConfigurationRecorders": []}}),
+        "config": Recorder("config", {"describe_configuration_recorders": {"ConfigurationRecorders": []},
+                                      "describe_delivery_channels": {"DeliveryChannels": []},
+                                      "describe_configuration_recorder_status": {"ConfigurationRecordersStatus": []}}),
         "securityhub": Recorder("securityhub"),
         "cloudformation": Recorder("cloudformation", {"describe_stacks": {"Stacks": [{
             "StackName": "shcp-insecure-lab", "CreationTime": "2026-10-15", "StackStatus": "CREATE_COMPLETE",
@@ -71,6 +73,31 @@ class LabSetup(unittest.TestCase):
                          ("s3control", "put_public_access_block"), ("ec2", "enable_ebs_encryption_by_default")]:
             self.assertIn(expected, calls)
         self.assertFalse(os.path.exists(state))
+
+    def test_existing_recorder_without_delivery_channel(self):
+        """Conta com gravador antigo e sem canal de entrega (o erro NoAvailableDeliveryChannelException)."""
+        clients = make_clients()
+        clients["config"].responses["describe_configuration_recorders"] = {"ConfigurationRecorders": [
+            {"name": "default", "roleARN": "arn:aws:iam::210987654321:role/x"},
+            {"name": "AWSConfigurationRecorderForX", "servicePrincipal": "x.amazonaws.com"}]}
+        self.run_script(clients, "--yes")
+        calls = self.names(clients)
+        self.assertNotIn(("config", "put_configuration_recorder"), calls)
+        self.assertIn(("config", "put_delivery_channel"), calls)
+        self.assertLess(calls.index(("config", "put_delivery_channel")), calls.index(("config", "start_configuration_recorder")))
+        start = [k for svc, n, k in clients["config"].calls if n == "start_configuration_recorder"][0]
+        self.assertEqual(start["ConfigurationRecorderName"], "default")
+
+    def test_already_recording_is_left_alone(self):
+        clients = make_clients()
+        clients["config"].responses.update({
+            "describe_configuration_recorders": {"ConfigurationRecorders": [{"name": "default"}]},
+            "describe_delivery_channels": {"DeliveryChannels": [{"name": "default", "s3BucketName": "b"}]},
+            "describe_configuration_recorder_status": {"ConfigurationRecordersStatus": [{"name": "default", "recording": True}]}})
+        self.run_script(clients, "--yes")
+        calls = self.names(clients)
+        self.assertNotIn(("config", "start_configuration_recorder"), calls)
+        self.assertNotIn(("s3", "create_bucket"), calls)
 
     def test_setup_requires_confirmation(self):
         clients = make_clients()

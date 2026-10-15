@@ -16,7 +16,7 @@ import _bootstrap  # noqa: F401
 
 from lib import API_VERSION
 from lib.aws import SERVICES, client, session
-from lib.io import markdown_table, new_run_dir, repo_path, utc_timestamp, write_csv, write_json, write_text, write_yaml
+from lib.io import DEFAULT_OUTPUTS, markdown_table, new_run_dir, repo_path, utc_timestamp, write_csv, write_json, write_text, write_yaml
 from lib.rules import RulesError, load_rules
 from scanner.findings import get_failed_findings, normalize
 from scanner.resources import COMPLIANT, resource_tags, verify
@@ -33,7 +33,7 @@ def main():
     parser.add_argument("--region", required=True)
     parser.add_argument("--profile", default=None)
     parser.add_argument("--rules", default=repo_path("config", "remediate_map.yaml"))
-    parser.add_argument("--output-dir", default="outputs")
+    parser.add_argument("--output-dir", default=DEFAULT_OUTPUTS, help="Padrão: outputs/ do repositório")
     args = parser.parse_args()
 
     try:

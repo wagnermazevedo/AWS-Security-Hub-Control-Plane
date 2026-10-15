@@ -15,7 +15,7 @@ from typing import Any, Dict, Tuple
 import _bootstrap  # noqa: F401
 
 from lib import API_VERSION
-from lib.io import load_yaml, write_yaml
+from lib.io import DEFAULT_OUTPUTS, DEFAULT_PLAN, latest_file, repo_path, load_yaml, write_yaml
 from lib.rules import RulesError, load_rules
 from remediate import REGISTRY
 from scanner.resources import COMPLIANT, UNKNOWN
@@ -62,10 +62,18 @@ def decide(item: Dict[str, Any], controls: Dict[str, Any], exc_cfg: Dict[str, An
 
 def main():
     parser = argparse.ArgumentParser(description="Security Hub Plan (não altera recursos)")
-    parser.add_argument("--input-yaml", required=True, help="YAML gerado pelo 00_securityhub_scan.py")
-    parser.add_argument("--rules", required=True, help="Caminho do config/remediate_map.yaml")
-    parser.add_argument("--output-yaml", required=True, help="Caminho do plano gerado")
+    parser.add_argument("--input-yaml", default=None,
+                        help="YAML gerado pelo 00_securityhub_scan.py. Padrão: o scan mais recente em outputs/")
+    parser.add_argument("--output-dir", default=DEFAULT_OUTPUTS, help="Onde procurar o scan mais recente")
+    parser.add_argument("--rules", default=repo_path("config", "remediate_map.yaml"), help="Caminho do config/remediate_map.yaml")
+    parser.add_argument("--output-yaml", default=DEFAULT_PLAN, help="Padrão: outputs/remediation_plan.yaml")
     args = parser.parse_args()
+    if not args.input_yaml:
+        try:
+            args.input_yaml = latest_file(args.output_dir, "securityhub_findings_export.yaml")
+        except FileNotFoundError as err:
+            raise SystemExit(f"[ERRO] {err}")
+        print(f"[INFO] Usando o scan mais recente: {args.input_yaml}")
 
     doc = load_yaml(args.input_yaml)
     if doc.get("kind") != "SecurityHubFindingsExport":

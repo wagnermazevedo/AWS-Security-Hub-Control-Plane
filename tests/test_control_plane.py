@@ -9,6 +9,7 @@ import os
 import runpy
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -202,3 +203,22 @@ class ControlIncludes(unittest.TestCase):
         load_rules, path = self._map({"a.yaml": "id: S3.1\ndecision: AUTO\n"})
         with self.assertRaisesRegex(RulesError, "não tem action"):
             load_rules(path)
+
+
+class SimpleCommands(unittest.TestCase):
+    """Os comandos do README rodam sem caminho nenhum: o plan acha o scan mais recente sozinho."""
+
+    def test_plan_without_input_uses_latest_scan(self):
+        runner = Runner(World())
+        runner.scan()
+        time.sleep(0.01)
+        newest, _ = runner.scan()
+        out = os.path.join(runner.tmp, "outputs")
+        plan_path = os.path.join(runner.tmp, "plano.yaml")
+        runner._run("01_securityhub_plan.py", "--output-dir", out, "--output-yaml", plan_path)
+        self.assertEqual(load_yaml(plan_path)["metadata"]["sourceScan"], os.path.abspath(newest))
+
+    def test_plan_without_any_scan_explains(self):
+        runner = Runner(World())
+        code = runner._run("01_securityhub_plan.py", "--output-dir", os.path.join(runner.tmp, "vazio"))
+        self.assertIn("Rode o scan primeiro", str(code))

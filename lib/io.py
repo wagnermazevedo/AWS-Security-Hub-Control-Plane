@@ -23,6 +23,20 @@ def repo_path(*parts: str) -> str:
     return os.path.join(REPO_ROOT, *parts)
 
 
+# Pasta padrão das saídas: sempre dentro do repositório, de onde quer que o script seja chamado.
+DEFAULT_OUTPUTS = os.path.join(REPO_ROOT, "outputs")
+DEFAULT_PLAN = os.path.join(DEFAULT_OUTPUTS, "remediation_plan.yaml")
+
+
+def latest_file(base_dir: str, filename: str) -> str:
+    """O arquivo `filename` mais recente dentro de base_dir/<timestamp>/ (por data de modificação)."""
+    import glob
+    found = glob.glob(os.path.join(base_dir, "*", filename))
+    if not found:
+        raise FileNotFoundError(f"Nenhum {filename} em {base_dir}/. Rode o scan primeiro.")
+    return max(found, key=os.path.getmtime)
+
+
 def new_run_dir(base_dir: str, timestamp: str) -> str:
     path = os.path.join(base_dir, timestamp)
     suffix = 1
