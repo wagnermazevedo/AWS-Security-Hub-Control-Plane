@@ -1,0 +1,5 @@
+id: EC2.7
+title: "Criptografia de EBS habilitada por padrão na região"
+decision: AUTO
+action: ec2_ebs_encryption_by_default
+severity: MEDIUM

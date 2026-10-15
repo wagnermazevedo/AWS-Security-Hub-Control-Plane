@@ -1,0 +1,5 @@
+id: S3.8
+title: "S3 Block Public Access habilitado no bucket"
+decision: AUTO
+action: s3_bucket_public_access_block
+severity: HIGH

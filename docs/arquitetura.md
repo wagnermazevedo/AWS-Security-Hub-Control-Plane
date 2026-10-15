@@ -9,7 +9,7 @@
                                         │
                      outputs/<ts>/securityhub_findings_export.yaml
                                         │
- 01_securityhub_plan.py ── config/remediate_map.yaml ──► AUTO / MANUAL / SUPPRESS / NO_ACTION
+ 01_securityhub_plan.py ── config/remediate_map.yaml + controls/*.yaml ──► AUTO / MANUAL / SUPPRESS / NO_ACTION
                                         │
                               remediation_plan.yaml
                                         │

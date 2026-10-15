@@ -45,7 +45,7 @@ Repare no IAM.4: ele fica manual de propósito. Nem tudo deve ser corrigido por 
 Pense em três etapas, cada uma com uma responsabilidade só:
 
 1. **Scan, que só olha.** Busca os findings com falha dos controles do mapa e, para cada um, consulta o recurso de verdade. Isso importa porque alguns controles são reavaliados de tempos em tempos, e o finding pode estar atrasado em relação à realidade.
-2. **Plan, que só decide.** Cruza cada finding com o `config/remediate_map.yaml` e escreve um plano: corrigir (`AUTO`), avisar (`MANUAL`), aceitar como exceção (`SUPPRESS`) ou não fazer nada porque já está tudo certo (`NO_ACTION`).
+2. **Plan, que só decide.** Cruza cada finding com o mapa de controles (`config/remediate_map.yaml` e os arquivos de `config/controls/`) e escreve um plano: corrigir (`AUTO`), avisar (`MANUAL`), aceitar como exceção (`SUPPRESS`) ou não fazer nada porque já está tudo certo (`NO_ACTION`).
 3. **Remediate, que age com cuidado.** Por padrão roda em dry-run e só mostra o que faria. No modo apply, busca o finding de novo, corrige, confere se ficou certo e só então marca como `RESOLVED`. Itens manuais viram `NOTIFIED` e exceções viram `SUPPRESSED`, sempre com uma nota.
 
 > **A regra de ouro:** nada é corrigido sem querer. Em dry-run, nenhuma API de escrita é chamada, nem no recurso, nem no Security Hub.
@@ -105,7 +105,19 @@ Remove o laboratório e devolve a conta exatamente como estava antes do setup. O
 
 Esse é o melhor jeito de aprender como o repositório funciona. Usando o **GuardDuty.1** (GuardDuty habilitado) como exemplo:
 
-1. **Declare no mapa.** Em `config/remediate_map.yaml`, adicione o controle com `title`, `decision` (`AUTO` ou `MANUAL`), `action` (se for AUTO), `severity` e, se quiser, `expected` (o texto do estado esperado que aparece no plano). Só isso já faz o scan buscar os findings dele.
+1. **Crie o arquivo do controle.** Cada controle mora no seu próprio arquivo em `config/controls/`, e o `remediate_map.yaml` inclui todos com `include: [controls/*.yaml]`. Crie `config/controls/GuardDuty.1.yaml`:
+
+   ```yaml
+   id: GuardDuty.1
+   title: "GuardDuty habilitado"
+   decision: AUTO              # AUTO, MANUAL ou SUPPRESS
+   action: guardduty_enable    # só para AUTO: o nome registrado em remediate/__init__.py
+   severity: HIGH
+   # opcionais: reason e runbook (MANUAL/SUPPRESS), note (aviso no plano), expected (estado esperado)
+   # enabled: false            # desliga o controle sem apagar o arquivo
+   ```
+
+   Só isso já faz o scan buscar os findings dele e o plan decidir sobre eles. Se um ID aparecer duas vezes, ou um AUTO vier sem `action`, o scan e o plan param com uma mensagem clara. O apply executa o que o plan decidiu, então ele também segue os arquivos incluídos.
 2. **Ensine o código a conferir o recurso.** Em `scanner/resources.py`, escreva uma função que devolve `COMPLIANT` ou `NONCOMPLIANT` e registre em `VERIFIERS`.
 3. **Escreva a correção (se for AUTO).** Crie `remediate/guardduty_1.py` com uma função `run(clients, ctx, dry_run)` que devolve `ok`, `message` e `changes`. Em dry-run ela só descreve o que faria. Depois registre o nome da ação em `remediate/__init__.py`.
 4. **Precisa de outro serviço da AWS?** Adicione o nome dele em `SERVICES`, no `lib/aws.py`.
@@ -146,7 +158,9 @@ AWS-Security-Hub-Control-Plane/
 │   ├── 01_securityhub_plan.py     # Decide
 │   ├── 02_securityhub_remediate.py  # Age
 │   └── 99_securityhub_lab_setup.py  # Monta e desmonta o laboratório
-├── config/remediate_map.yaml      # O cérebro: o destino de cada controle
+├── config/
+│   ├── remediate_map.yaml         # Exceções e o include dos controles
+│   └── controls/                  # Um arquivo por controle (S3.1.yaml, IAM.4.yaml...)
 ├── scanner/                       # Leitura dos findings e do estado real
 ├── remediate/                     # Uma correção pequena por controle
 ├── lab_insecure/                  # CloudFormation do laboratório
@@ -186,7 +200,7 @@ Instead of just **looking** at Security Hub, we **act** on it. The code reads th
 ### How it works
 
 1. **Scan only looks:** it fetches failed findings and checks the real resource.
-2. **Plan only decides:** `AUTO`, `MANUAL`, `SUPPRESS` or `NO_ACTION`, based on `config/remediate_map.yaml`.
+2. **Plan only decides:** `AUTO`, `MANUAL`, `SUPPRESS` or `NO_ACTION`, based on the control files in `config/controls/` (included by `config/remediate_map.yaml`).
 3. **Remediate acts carefully:** dry-run by default; in apply mode it fixes, verifies, and only then marks the finding `RESOLVED`. Resources tagged `scp-exception` with an `exception-owner` become `SUPPRESSED`.
 
 ### Quick start (AWS CloudShell)
@@ -201,7 +215,7 @@ python3 scripts/99_securityhub_lab_setup.py --region us-east-1 --destroy # clean
 
 ### Adding a new control
 
-1. Declare it in `config/remediate_map.yaml`.
+1. Create `config/controls/<ID>.yaml` (`id`, `title`, `decision`, `action`, `severity`); `remediate_map.yaml` includes every file in that folder.
 2. Add a verifier to `VERIFIERS` in `scanner/resources.py`.
 3. For AUTO controls, add `remediate/<control>.py` with `run(clients, ctx, dry_run)` and register it in `remediate/__init__.py`.
 4. New AWS service? Add it to `SERVICES` in `lib/aws.py`.

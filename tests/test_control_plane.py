@@ -163,3 +163,42 @@ class FullCycle(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ControlIncludes(unittest.TestCase):
+    """Um arquivo por controle em config/controls/, lidos pelo include do remediate_map.yaml."""
+
+    def _map(self, files, extra=""):
+        from lib.rules import load_rules  # noqa: E402
+        tmp = tempfile.mkdtemp()
+        os.makedirs(os.path.join(tmp, "controls"))
+        for name, body in files.items():
+            with open(os.path.join(tmp, "controls", name), "w", encoding="utf-8") as f:
+                f.write(body)
+        path = os.path.join(tmp, "remediate_map.yaml")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("apiVersion: securityhub.shcp/v1\nkind: RemediateMap\ninclude:\n  - controls/*.yaml\n" + extra)
+        return load_rules, path
+
+    def test_repo_map_loads_every_control_file(self):
+        from lib.rules import load_rules
+        doc = load_rules(RULES)
+        self.assertEqual(sorted(doc["controls"]), ["EC2.2", "EC2.7", "IAM.4", "S3.1", "S3.8"])
+        self.assertEqual(doc["sources"]["S3.8"], os.path.join("controls", "S3.8.yaml"))
+
+    def test_new_file_is_picked_up_and_disabled_file_is_skipped(self):
+        load_rules, path = self._map({
+            "GuardDuty.1.yaml": 'id: GuardDuty.1\ntitle: "GuardDuty habilitado"\ndecision: MANUAL\nreason: "teste"\n',
+            "S3.1.yaml": "id: S3.1\ndecision: AUTO\naction: s3_account_public_access_block\nenabled: false\n",
+        })
+        self.assertEqual(list(load_rules(path)["controls"]), ["GuardDuty.1"])
+
+    def test_duplicate_and_invalid_controls_are_rejected(self):
+        from lib.rules import RulesError
+        load_rules, path = self._map({"a.yaml": "id: S3.1\ndecision: MANUAL\n"},
+                                     extra="controls:\n  S3.1:\n    decision: MANUAL\n")
+        with self.assertRaisesRegex(RulesError, "duas vezes"):
+            load_rules(path)
+        load_rules, path = self._map({"a.yaml": "id: S3.1\ndecision: AUTO\n"})
+        with self.assertRaisesRegex(RulesError, "não tem action"):
+            load_rules(path)

@@ -16,6 +16,8 @@ import _bootstrap  # noqa: F401
 
 from lib import API_VERSION
 from lib.io import load_yaml, write_yaml
+from lib.rules import RulesError, load_rules
+from remediate import REGISTRY
 from scanner.resources import COMPLIANT, UNKNOWN
 
 EXPECTED = {
@@ -33,7 +35,7 @@ def decide(item: Dict[str, Any], controls: Dict[str, Any], exc_cfg: Dict[str, An
     state = (item.get("verified_state") or {}).get("state")
 
     if not rule:
-        return "MANUAL", f"Controle {control} não está no remediate_map.yaml", "manual"
+        return "MANUAL", f"Controle {control} não está no remediate_map.yaml nem em config/controls/", "manual"
 
     exception = item.get("exception")
     if exception:
@@ -69,8 +71,14 @@ def main():
     if doc.get("kind") != "SecurityHubFindingsExport":
         raise SystemExit(f"[ERRO] {args.input_yaml} não é um export de scan (kind={doc.get('kind')})")
 
-    rules_doc = load_yaml(args.rules)
+    try:
+        rules_doc = load_rules(args.rules)
+    except RulesError as err:
+        raise SystemExit(f"[ERRO] Mapa de controles inválido: {err}")
     controls = rules_doc.get("controls", {}) or {}
+    unknown = {c: r["action"] for c, r in controls.items() if r.get("decision") == "AUTO" and r["action"] not in REGISTRY}
+    if unknown:
+        raise SystemExit(f"[ERRO] Ação sem implementação em remediate/__init__.py: {unknown}")
     exc_cfg = rules_doc.get("exception", {}) or {}
 
     items = (doc.get("spec") or {}).get("items", []) or []

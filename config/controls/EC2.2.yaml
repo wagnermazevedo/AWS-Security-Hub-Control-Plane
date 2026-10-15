@@ -1,0 +1,6 @@
+id: EC2.2
+title: "Security group default da VPC sem regras de entrada e saída"
+decision: AUTO
+action: ec2_default_sg_revoke_all
+severity: HIGH
+note: "O SG default não deve ser usado por recursos. Confirme no plano que nenhum recurso depende dele."

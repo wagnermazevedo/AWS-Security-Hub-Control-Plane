@@ -1,0 +1,5 @@
+id: S3.1
+title: "S3 Block Public Access habilitado na conta"
+decision: AUTO
+action: s3_account_public_access_block
+severity: MEDIUM

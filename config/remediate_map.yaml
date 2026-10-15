@@ -16,35 +16,15 @@ exception:
   tag_key: scp-exception
   owner_tag_key: exception-owner
 
-controls:
-  S3.1:
-    title: "S3 Block Public Access habilitado na conta"
-    decision: AUTO
-    action: s3_account_public_access_block
-    severity: MEDIUM
+# Um arquivo por controle em config/controls/. Para adicionar um controle,
+# crie config/controls/<ID>.yaml; o scan e o plan leem todos automaticamente.
+# Para desligar um controle sem apagar o arquivo, use `enabled: false` nele.
+include:
+  - controls/*.yaml
 
-  S3.8:
-    title: "S3 Block Public Access habilitado no bucket"
-    decision: AUTO
-    action: s3_bucket_public_access_block
-    severity: HIGH
-
-  EC2.2:
-    title: "Security group default da VPC sem regras de entrada e saída"
-    decision: AUTO
-    action: ec2_default_sg_revoke_all
-    severity: HIGH
-    note: "O SG default não deve ser usado por recursos. Confirme no plano que nenhum recurso depende dele."
-
-  EC2.7:
-    title: "Criptografia de EBS habilitada por padrão na região"
-    decision: AUTO
-    action: ec2_ebs_encryption_by_default
-    severity: MEDIUM
-
-  IAM.4:
-    title: "Usuário root sem access key"
-    decision: MANUAL
-    severity: CRITICAL
-    reason: "Chave de root se remove com login de root e MFA, nunca por script"
-    runbook: "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_root-user_manage_delete-key.html"
+# Controles também podem ser declarados aqui mesmo, se preferir:
+# controls:
+#   GuardDuty.1:
+#     title: "GuardDuty habilitado"
+#     decision: MANUAL
+#     reason: "..."

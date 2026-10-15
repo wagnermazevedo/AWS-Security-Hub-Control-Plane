@@ -16,7 +16,8 @@ import _bootstrap  # noqa: F401
 
 from lib import API_VERSION
 from lib.aws import SERVICES, client, session
-from lib.io import load_yaml, markdown_table, new_run_dir, repo_path, utc_timestamp, write_csv, write_json, write_text, write_yaml
+from lib.io import markdown_table, new_run_dir, repo_path, utc_timestamp, write_csv, write_json, write_text, write_yaml
+from lib.rules import RulesError, load_rules
 from scanner.findings import get_failed_findings, normalize
 from scanner.resources import COMPLIANT, resource_tags, verify
 
@@ -35,7 +36,10 @@ def main():
     parser.add_argument("--output-dir", default="outputs")
     args = parser.parse_args()
 
-    rules_doc = load_yaml(args.rules)
+    try:
+        rules_doc = load_rules(args.rules)
+    except RulesError as err:
+        raise SystemExit(f"[ERRO] Mapa de controles inválido: {err}")
     controls = rules_doc.get("controls", {}) or {}
     exc_cfg = rules_doc.get("exception", {}) or {}
 
@@ -77,6 +81,7 @@ def main():
             "source": "securityhub:GetFindings (ASFF)",
             "rulesFile": os.path.relpath(args.rules, repo_path()),
             "controls": list(controls.keys()),
+            "controlFiles": rules_doc.get("included", []),
             "summary": dict(by_control),
         },
         "spec": {"defaultMode": "dry-run", "items": items},

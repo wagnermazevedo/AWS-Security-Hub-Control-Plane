@@ -74,8 +74,9 @@
 <text x="790" y="512" font-size="12.5" fill="#374151">→ só então fecha o finding</text>
 <path d="M496,485 L536,485" fill="none" stroke="#4b5563" stroke-width="1.8" marker-end="url(#ah)"/>
 <path d="M736,485 L776,485" fill="none" stroke="#4b5563" stroke-width="1.8" marker-end="url(#ah)"/>
-<rect x="516" y="562" width="240" height="50" rx="10" fill="#e9f7f8" stroke="#2a9aa6" stroke-width="1.6"/>
-<text x="530" y="586" font-size="14.5" font-weight="700" fill="#114e55">config/remediate_map.yaml</text>
+<rect x="496" y="556" width="280" height="56" rx="10" fill="#e9f7f8" stroke="#2a9aa6" stroke-width="1.6"/>
+<text x="510" y="580" font-size="14.5" font-weight="700" fill="#114e55">config/controls/*.yaml</text>
+<text x="510" y="602" font-size="12.5" fill="#374151">um arquivo por controle (include)</text>
 <path d="M636,562 L636,542" fill="none" stroke="#4b5563" stroke-width="1.8" marker-end="url(#ah)"/>
 <path d="M156,430 L156,328" fill="none" stroke="#d18a14" stroke-width="1.8" marker-end="url(#ah)"/>
 <rect x="90.5" y="359" width="131.0" height="18" rx="4" fill="#ffffff" fill-opacity="0.92"/>

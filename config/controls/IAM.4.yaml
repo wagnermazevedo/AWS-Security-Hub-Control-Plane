@@ -1,0 +1,6 @@
+id: IAM.4
+title: "Usuário root sem access key"
+decision: MANUAL
+severity: CRITICAL
+reason: "Chave de root se remove com login de root e MFA, nunca por script"
+runbook: "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_root-user_manage_delete-key.html"
