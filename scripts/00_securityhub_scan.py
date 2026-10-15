@@ -1,133 +1,106 @@
+#!/usr/bin/env python3
+"""[00] SCAN: lê os findings ativos dos controles do mapa e confere o recurso real. Somente leitura.
+
+Saída (pasta nova por execução, nunca sobrescrita):
+  <output-dir>/<timestamp>/securityhub_findings_export.yaml  -> entrada do plan
+  <output-dir>/<timestamp>/securityhub_findings_export.json  -> inclui o finding ASFF bruto
+  <output-dir>/<timestamp>/securityhub_findings_export.csv   -> Athena
+  <output-dir>/<timestamp>/summary.md                        -> gente
+"""
+
 import argparse
 import os
-from typing import Any, Dict, List, Optional
+from collections import Counter
 
-import yaml
+import _bootstrap  # noqa: F401
 
-from lib.aws_clients import get_client
-from lib.io_utils import ensure_directory, utc_timestamp, safe_get
+from lib import API_VERSION
+from lib.aws import client, session
+from lib.io import load_yaml, markdown_table, new_run_dir, repo_path, utc_timestamp, write_csv, write_json, write_text, write_yaml
+from scanner.findings import get_failed_findings, normalize
+from scanner.resources import COMPLIANT, resource_tags, verify
 
-
-def paginate_findings(securityhub, filters: Dict[str, Any], limit: int) -> List[Dict[str, Any]]:
-    findings: List[Dict[str, Any]] = []
-    paginator = securityhub.get_paginator("get_findings")
-    for page in paginator.paginate(Filters=filters, PaginationConfig={"PageSize": 100}):
-        for f in page.get("Findings", []):
-            findings.append(f)
-            if len(findings) >= limit:
-                return findings
-    return findings
+CSV_FIELDS = ["id", "control", "severity", "workflow_status", "resource_type", "resource", "verified_state", "exception", "updated_at"]
 
 
-def normalize_finding(f: Dict[str, Any]) -> Dict[str, Any]:
-    resources_norm = []
-    for r in f.get("Resources", []) or []:
-        resources_norm.append({
-            "type": r.get("Type"),
-            "id": r.get("Id"),
-            "region": r.get("Region"),
-            "partition": r.get("Partition"),
-        })
-
-    return {
-        "findingId": f.get("Id"),
-        "productArn": f.get("ProductArn"),
-        "generatorId": f.get("GeneratorId"),
-        "awsAccountId": f.get("AwsAccountId"),
-        "region": f.get("Region"),
-        "title": f.get("Title"),
-        "severityLabel": safe_get(f, "Severity", "Label"),
-        "complianceStatus": safe_get(f, "Compliance", "Status"),
-        "workflowStatus": safe_get(f, "Workflow", "Status"),
-        "recordState": f.get("RecordState"),
-        "createdAt": f.get("CreatedAt"),
-        "updatedAt": f.get("UpdatedAt"),
-        "types": f.get("Types") or [],
-        "resources": resources_norm,
-    }
+def build_clients(sess):
+    return {svc: client(sess, svc) for svc in ("securityhub", "s3", "s3control", "ec2", "iam", "sts")}
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Export Security Hub findings to a universal remediation-ready YAML")
-    ap.add_argument("--region", required=True)
-    ap.add_argument("--profile", default=None)
-    ap.add_argument("--output-dir", default="outputs")
-    ap.add_argument("--limit", type=int, default=2000)
+    parser = argparse.ArgumentParser(description="Security Hub Scan (somente leitura)")
+    parser.add_argument("--region", required=True)
+    parser.add_argument("--profile", default=None)
+    parser.add_argument("--rules", default=repo_path("config", "remediate_map.yaml"))
+    parser.add_argument("--output-dir", default="outputs")
+    args = parser.parse_args()
 
-    # optional filters (can be empty to export broadly)
-    ap.add_argument("--compliance", default="FAILED", help="e.g., FAILED|PASSED|WARNING|NOT_AVAILABLE")
-    ap.add_argument("--severity", default="HIGH,CRITICAL", help="Comma list: INFORMATIONAL,LOW,MEDIUM,HIGH,CRITICAL")
-    ap.add_argument("--record-state", default="ACTIVE", help="ACTIVE|ARCHIVED")
-    args = ap.parse_args()
+    rules_doc = load_yaml(args.rules)
+    controls = rules_doc.get("controls", {}) or {}
+    exc_cfg = rules_doc.get("exception", {}) or {}
 
-    sh = get_client("securityhub", region=args.region, profile=args.profile)
+    clients = build_clients(session(args.profile, args.region))
+    account_id = clients["sts"].get_caller_identity()["Account"]
+
+    raw_findings = get_failed_findings(clients["securityhub"], controls.keys())
+    items, raw_by_id = [], {}
+    for idx, raw in enumerate(raw_findings, start=1):
+        norm = normalize(raw)
+        control = norm["controlId"]
+        locator = norm["resource"]["locator"]
+        state, detail = verify(control, clients, account_id, locator)
+        item = {
+            "id": f"shcp-item-{idx:06d}",
+            "control": control,
+            "title": (controls.get(control) or {}).get("title", norm["title"]),
+            "finding": norm,
+            "verified_state": {"state": state, **detail},
+        }
+        if state == COMPLIANT:
+            item["note"] = "O recurso já está conforme; o finding aguarda reavaliação do Security Hub"
+        tags = resource_tags(control, clients, locator) if locator else {}
+        if exc_cfg.get("tag_key") in tags:
+            item["exception"] = {"justification": tags[exc_cfg["tag_key"]],
+                                 "owner": tags.get(exc_cfg.get("owner_tag_key", "exception-owner"))}
+        items.append(item)
+        raw_by_id[item["id"]] = raw
 
     timestamp = utc_timestamp()
-    run_dir = os.path.join(args.output_dir, timestamp)
-    ensure_directory(run_dir)
-
-    sev_list = [s.strip().upper() for s in args.severity.split(",") if s.strip()]
-
-    filters: Dict[str, Any] = {
-        "RecordState": [{"Value": args.record_state, "Comparison": "EQUALS"}],
-    }
-    if args.compliance:
-        filters["ComplianceStatus"] = [{"Value": args.compliance, "Comparison": "EQUALS"}]
-    if sev_list:
-        filters["SeverityLabel"] = [{"Value": s, "Comparison": "EQUALS"} for s in sev_list]
-
-    findings = paginate_findings(sh, filters=filters, limit=args.limit)
-
-    # Try to infer account id (best-effort)
-    account_id = findings[0].get("AwsAccountId") if findings else None
-
+    by_control = Counter(i["control"] for i in items)
     export = {
-        "apiVersion": "shcp/v1",
-        "kind": "FindingsExport",
+        "apiVersion": API_VERSION,
+        "kind": "SecurityHubFindingsExport",
         "metadata": {
             "generatedAt": timestamp,
             "region": args.region,
             "accountId": account_id,
-            "source": "securityhub:GetFindings",
-            "filters": {
-                "RecordState": args.record_state,
-                "ComplianceStatus": args.compliance,
-                "SeverityLabel": sev_list,
-            },
+            "source": "securityhub:GetFindings (ASFF)",
+            "rulesFile": os.path.relpath(args.rules, repo_path()),
+            "controls": list(controls.keys()),
+            "summary": dict(by_control),
         },
-        "spec": {
-            "defaultMode": "dry-run",
-            "items": [],
-        },
+        "spec": {"defaultMode": "dry-run", "items": items},
     }
 
-    for idx, f in enumerate(findings, start=1):
-        export["spec"]["items"].append({
-            "id": f"item-{idx:06d}",
-            "finding": {
-                "normalized": normalize_finding(f),
-                "raw": f,  # keep the full finding intact
-            },
-            "decision": {
-                "type": "MANUAL",  # AUTO|MANUAL|IGNORE (default MANUAL for universal export)
-                "reason": "Universal export: no action mapping applied",
-            },
-            "action": {
-                "name": "manual",
-                "params": {},
-            },
-            "guardrails": {
-                "requireDryRunFirst": True,
-                "approval": None,
-            },
-        })
+    out_dir = new_run_dir(args.output_dir, timestamp)
+    write_yaml(os.path.join(out_dir, "securityhub_findings_export.yaml"), export)
+    write_json(os.path.join(out_dir, "securityhub_findings_export.json"),
+               {**export, "raw": raw_by_id})
+    rows = [{
+        "id": i["id"], "control": i["control"], "severity": i["finding"]["severity"],
+        "workflow_status": i["finding"]["workflowStatus"], "resource_type": i["finding"]["resource"]["type"],
+        "resource": i["finding"]["resource"]["locator"] or "conta", "verified_state": i["verified_state"]["state"],
+        "exception": "sim" if i.get("exception") else "", "updated_at": i["finding"]["updatedAt"],
+    } for i in items]
+    write_csv(os.path.join(out_dir, "securityhub_findings_export.csv"), rows, CSV_FIELDS)
+    write_text(os.path.join(out_dir, "summary.md"),
+               f"# Security Hub Scan · {timestamp}\n\nConta `{account_id}` · região `{args.region}`\n\n"
+               + markdown_table(rows, ["control", "severity", "resource", "verified_state", "workflow_status", "exception"]))
 
-    out_path = os.path.join(run_dir, "securityhub_findings_export.yaml")
-    with open(out_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(export, f, sort_keys=False, allow_unicode=True)
-
-    print(f"[OK] YAML exported: {out_path}")
-    print(f" - findings: {len(findings)}")
+    print(f"[OK] Security Hub Scan concluído: {out_dir}/securityhub_findings_export.yaml")
+    print(f" - Findings ativos com falha: {len(items)}")
+    for row in rows:
+        print(f"   {row['control']:<6} {row['severity'] or '-':<9} {row['resource']:<40} verified_state={row['verified_state']}")
 
 
 if __name__ == "__main__":

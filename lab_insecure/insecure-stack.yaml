@@ -1,0 +1,65 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Laboratório inseguro do AWS Security Hub as Control Plane. Cria recursos com
+  falhas de propósito para os controles S3.8 e EC2.2. Use SOMENTE numa conta de testes.
+  Os controles de conta (S3.1 e EC2.7) são preparados pelo deploy.sh.
+
+Resources:
+  # S3.8: bucket com o Block Public Access desligado. O remediate deve corrigir.
+  InsecureBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        IgnorePublicAcls: false
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+      Tags:
+        - Key: Environment
+          Value: lab
+
+  # S3.8 com exceção documentada: deve virar SUPPRESSED no plano, não remediação.
+  ExceptionBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        IgnorePublicAcls: false
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+      Tags:
+        - Key: Environment
+          Value: lab
+        - Key: scp-exception
+          Value: "Site estatico de testes ate 2026-12-31"
+        - Key: exception-owner
+          Value: web-platform-team
+
+  # EC2.2: VPC de laboratório com SSH aberto para o mundo no security group default.
+  LabVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.99.0.0/16
+      Tags:
+        - Key: Name
+          Value: shcp-lab-vpc
+        - Key: Environment
+          Value: lab
+
+  DefaultSgOpenSsh:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !GetAtt LabVpc.DefaultSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      CidrIp: 0.0.0.0/0
+      Description: "Inseguro de proposito (lab EC2.2)"
+
+Outputs:
+  InsecureBucketName:
+    Value: !Ref InsecureBucket
+  ExceptionBucketName:
+    Value: !Ref ExceptionBucket
+  LabDefaultSecurityGroup:
+    Value: !GetAtt LabVpc.DefaultSecurityGroup

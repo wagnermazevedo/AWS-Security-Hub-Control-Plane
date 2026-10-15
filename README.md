@@ -1,302 +1,188 @@
-# AWS Security Hub as a Control Plane
+# AWS Security Hub as Control Plane
 
-This project transforms **AWS Security Hub** from a passive security dashboard into an **active, governed Security Control Plane**.
-
-Instead of treating findings as informational alerts, this framework uses Security Hub as the **authoritative source of truth** to:
-
-* Export findings into a **single YAML control artifact**
-* Decide remediation actions declaratively
-* Execute safe remediations (dry-run or apply)
-* Preserve **audit-grade, versioned evidence**
-
-The result is a **closed-loop security lifecycle** designed for real-world cloud governance.
+<p align="center">
+  <a href="#-português">Português</a> •
+  <a href="#-english">English</a>
+</p>
 
 ---
 
-## ✨ Key Features
+## 🇧🇷 Português
 
-* ✅ **Single execution path**
-* ✅ **Single output format (YAML)**
-* ✅ Security Hub as the **control plane**
-* ✅ Declarative remediation rules (YAML-driven)
-* ✅ Safe automation with mandatory dry-run
-* ✅ Optional “best-effort” remediation mode
-* ✅ Audit-ready evidence (pre- and post-remediation)
+O AWS Security Hub costuma ser usado como painel: ele mostra os problemas, alguém exporta para uma planilha, e os findings continuam abertos meses depois. Este módulo transforma o Security Hub na **fonte de verdade de um plano de controle**: ele lê os findings, confere o recurso real, decide o que fazer com cada um e fecha o ciclo corrigindo o recurso e marcando o finding como resolvido.
 
----
+> **Importante:** este repositório nasce do template [AWS Security Control Plane Scripts](https://github.com/wagnermazevedo/AWS-Security-Control-Plane-Scripts) e segue o mesmo contrato de execução, a mesma estratégia de saídas e o mesmo `test-control-plane.sh`.
+>
+> ⚠️ **Use somente numa conta de testes.** O setup do laboratório desliga proteções da conta de propósito.
 
-## 🎯 Why This Project Exists
+### Objetivos do Módulo
 
-Most organizations use Security Hub only for visibility.
+- **Security Hub como fonte de verdade**, inclusive de compliance: os padrões (AWS FSBP, CIS, NIST SP 800-53, PCI DSS) moram aqui.
+- **Decisão declarativa** por ID de controle, nunca por palavra-chave no título.
+- **Ciclo fechado:** corrigir o recurso e devolver o finding como `RESOLVED`, com nota de auditoria.
+- **Evidência versionada** de cada execução.
 
-This project answers a different question:
+### Controles cobertos
 
-> **“How do we turn Security Hub findings into controlled, auditable action?”**
+| Controle FSBP | O que verifica | Decisão | O que o apply faz |
+|---|---|---|---|
+| **S3.1** | Block Public Access ligado na conta | AUTO | Liga as 4 flags na conta |
+| **S3.8** | Block Public Access ligado no bucket | AUTO | Liga as 4 flags no bucket |
+| **EC2.2** | Security group default da VPC sem regras | AUTO | Remove as regras de entrada e saída (só em SG `default`) |
+| **EC2.7** | Criptografia de EBS por padrão | AUTO | Liga na região |
+| **IAM.4** | Usuário root sem access key | MANUAL | Só marca o finding `NOTIFIED`, com runbook |
 
-This framework provides that answer by separating:
+O IAM.4 fica manual de propósito: nem todo finding deve ser corrigido por script, e chave de root é um deles.
 
-* **Detection** (Security Hub)
-* **Decision** (YAML rules and planning)
-* **Execution** (explicit, governed remediation)
-* **Validation** (re-scan and evidence)
+### Contrato de Execução (Scan / Plan / Remediate)
 
----
+1. **Scan (somente leitura):** busca os findings `FAILED`, `ACTIVE` e em `NEW` ou `NOTIFIED` dos controles do mapa. Para cada um, consulta o recurso de verdade e grava `verified_state`, porque alguns controles são reavaliados periodicamente e o finding pode estar atrasado.
+2. **Plan (não muta):** cruza cada finding com o `config/remediate_map.yaml` e decide `AUTO`, `MANUAL`, `SUPPRESS` ou `NO_ACTION` (recurso já conforme).
+3. **Remediate (muta, controlado):** dry-run é o padrão. No apply, busca o finding de novo, corrige o recurso, confere o novo estado e só então chama `BatchUpdateFindings` com `RESOLVED`. Itens manuais viram `NOTIFIED` e exceções viram `SUPPRESSED`, sempre com nota.
 
-## 🔁 Unified Security Lifecycle
+> **Regra de Ouro:** nenhuma remediação acontece acidentalmente. Em dry-run, nenhuma API de escrita é chamada, nem no recurso nem no Security Hub.
 
-```
-Detect → Export → Decide → Remediate → Validate
-```
+**Exceções com dono:** um bucket ou security group com a tag `scp-exception` não é corrigido nem ignorado: vira `SUPPRESSED` com a justificativa (valor da tag) e o dono (tag `exception-owner`). Exceção sem dono vira `MANUAL`.
 
-Mapped directly to scripts:
+**Leitor de formato isolado:** todo o conhecimento do ASFF está em `scanner/findings.py`. Se a fonte mudar para OCSF (Security Lake ou a nova geração do Security Hub), troca-se o leitor e o plan e o remediate continuam iguais.
 
-| Phase           | Script                        | Output |
-| --------------- | ----------------------------- | ------ |
-| Detect & Export | `00_securityhub_scan.py`      | YAML   |
-| Decide          | `01_securityhub_plan.py`      | YAML   |
-| Remediate       | `02_securityhub_remediate.py` | YAML   |
-| Validate        | `00_securityhub_scan.py`      | YAML   |
+### Verificação Automatizada e Testes
 
-There are **no alternative paths** and **no secondary formats**.
+O `test-control-plane.sh` do template orquestra os estágios `scripts/00`, `01` e `02`, e o setup `scripts/99` cria o estado inseguro que eles testam:
 
----
+1. **Provisionamento do estado inseguro:** `scripts/99_securityhub_lab_setup.py`
+2. **Validação da detecção:** `scripts/00_securityhub_scan.py`
+3. **Avaliação da estratégia:** `scripts/01_securityhub_plan.py`
+4. **Aplicação e validação da remediação:** `scripts/02_securityhub_remediate.py` em dry-run e depois em apply, seguido de um novo scan
 
-## 📁 Project Structure
+Os testes offline (`python3 -m unittest discover -s tests -v`) rodam o ciclo completo numa conta simulada, validam cada chamada contra o modelo oficial da API do botocore e conferem o resultado com `tests/expected_findings.yaml`.
 
-```
-.
-├── scripts/
-│   ├── 00_securityhub_scan.py          # Export Security Hub findings to YAML
-│   ├── 01_securityhub_plan.py          # Apply remediation rules (AUTO / MANUAL)
-│   ├── 02_securityhub_remediate.py     # Execute remediations from YAML
-│   └── 99_lab_insecure_resources.py    # Create insecure resources for testing
-│
-├── lib/
-│   ├── aws_clients.py                  # AWS client/session helpers
-│   ├── finding_matchers.py             # Keyword and pattern matching helpers
-│   └── io_utils.py                     # IO, timestamps, utilities
-│
-├── config/
-│   └── remediate_map.yaml              # Declarative remediation rules
-│
-├── outputs/
-│   └── YYYYMMDDTHHMMSSZ/               # Versioned evidence folders
-│
-└── README.md
-```
+### Implantação e Replicação via AWS CloudShell
 
----
-
-## 📄 The YAML Control Artifact
-
-All operations revolve around **one YAML file per execution**, for example:
-
-```
-outputs/20260108T180000Z/securityhub_control_plane.yaml
-```
-
-This YAML acts simultaneously as:
-
-* Evidence
-* Remediation plan
-* Execution input
-* Audit artifact
-
-### Simplified Structure
-
-```yaml
-apiVersion: shcp/v1
-kind: SecurityHubControlPlane
-metadata:
-  generatedAt: "2026-01-08T18:00:00Z"
-  region: "us-east-1"
-spec:
-  items:
-    - id: item-000001
-      finding:
-        normalized: {...}
-        raw: {...}
-      decision:
-        type: AUTO
-        reason: "Matched rule: S3 bucket public exposure"
-      action:
-        name: s3_public_access_block
-        params: {}
-```
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-* Python **3.9+**
-* AWS credentials configured (CLI profile or environment variables)
-* AWS Security Hub enabled in the target region
-
-Install dependencies:
+#### Passo 1: Clonar e instalar
 
 ```bash
-pip install boto3 pyyaml
+cd ~
+git clone https://github.com/wagnermazevedo/AWS-Security-Hub-Control-Plane.git
+cd AWS-Security-Hub-Control-Plane
+pip3 install --user -r requirements.txt
 ```
 
----
-
-## ▶️ Usage
-
-### 1️⃣ Export Findings (Detection)
+#### Passo 2: Criar o laboratório (conta de testes)
 
 ```bash
-python scripts/00_securityhub_scan.py --region us-east-1
+python3 scripts/99_securityhub_lab_setup.py --region us-east-1
 ```
 
-This generates the initial YAML artifact.
-All items are marked as `MANUAL` by default.
+Liga o AWS Config, o Security Hub e o FSBP, desliga o Block Public Access da conta e a criptografia de EBS por padrão (guardando o estado anterior) e sobe o `lab_insecure/insecure-stack.yaml`. S3.8 e EC2.2 são reavaliados em minutos; S3.1 e EC2.7 são periódicos e podem levar horas, então rode o setup com antecedência.
 
----
-
-### 2️⃣ Decide Remediation (Planning)
+#### Passo 3: Scan, Plan e Remediate
 
 ```bash
-python scripts/01_securityhub_plan.py \
-  --input-yaml outputs/<timestamp>/securityhub_control_plane.yaml \
+python3 scripts/00_securityhub_scan.py --region us-east-1
+python3 scripts/01_securityhub_plan.py \
+  --input-yaml outputs/<timestamp>/securityhub_findings_export.yaml \
   --rules config/remediate_map.yaml \
-  --output-yaml outputs/<timestamp>/securityhub_control_plane.planned.yaml
+  --output-yaml outputs/remediation_plan.yaml
+python3 scripts/02_securityhub_remediate.py --region us-east-1 --yaml outputs/remediation_plan.yaml --mode dry-run
+python3 scripts/02_securityhub_remediate.py --region us-east-1 --yaml outputs/remediation_plan.yaml --mode apply
 ```
 
-This step:
-
-* Applies declarative rules
-* Promotes findings to `AUTO` or keeps them `MANUAL`
-* Documents the decision reason
-* Does **not** change any AWS resources
-
----
-
-### 3️⃣ Execute Remediation
-
-#### Dry-run (mandatory)
+Ou pelo orquestrador do template, a partir do `$HOME`:
 
 ```bash
-python scripts/02_securityhub_remediate.py \
-  --region us-east-1 \
-  --yaml outputs/<timestamp>/securityhub_control_plane.planned.yaml \
-  --mode dry-run
+~/AWS-Security-Hub-Control-Plane/test-control-plane.sh AWS-Security-Hub-Control-Plane dry-run
 ```
 
-#### Apply (after approval)
+#### Passo 4: Limpar
 
 ```bash
-python scripts/02_securityhub_remediate.py \
-  --region us-east-1 \
-  --yaml outputs/<timestamp>/securityhub_control_plane.planned.yaml \
-  --mode apply
+python3 scripts/99_securityhub_lab_setup.py --region us-east-1 --destroy
 ```
 
-Only items marked as:
+Remove a stack e restaura as proteções da conta ao estado de antes do setup. O Security Hub e o AWS Config continuam ligados.
 
-```yaml
-decision:
-  type: AUTO
+### Estratégia de Saídas (Outputs)
+
+Cada execução cria uma pasta nova em `outputs/<timestamp>/`, nunca sobrescrita:
+
+- **YAML** (`securityhub_findings_export.yaml`): entrada do plan.
+- **JSON:** fonte da verdade, com o finding ASFF bruto.
+- **CSV:** pronto para o Amazon Athena.
+- **Markdown** (`summary.md`): resumo para triagem.
+
+O remediate grava JSON, CSV e Markdown, e não YAML, para que o `test-control-plane.sh` continue encontrando o YAML de scan mais recente. Se o plano tiver passado pela anonimização do orquestrador, o remediate busca a conta pela credencial em uso e os findings de novo no Security Hub, então os números mascarados não atrapalham.
+
+### Permissões
+
+- **Scan:** `securityhub:GetFindings`, `s3:GetAccountPublicAccessBlock`, `s3:GetBucketPublicAccessBlock`, `s3:GetBucketTagging`, `ec2:DescribeSecurityGroups`, `ec2:GetEbsEncryptionByDefault`, `iam:GetAccountSummary`, `sts:GetCallerIdentity`
+- **Apply:** também `securityhub:BatchUpdateFindings`, `s3:PutAccountPublicAccessBlock`, `s3:PutBucketPublicAccessBlock`, `ec2:RevokeSecurityGroupIngress`, `ec2:RevokeSecurityGroupEgress`, `ec2:EnableEbsEncryptionByDefault`
+
+### Estrutura do Repositório
+
+```text
+AWS-Security-Hub-Control-Plane/
+├── test-control-plane.sh          # Motor de orquestração de testes do template
+├── scripts/                       # Estágios que o orquestrador executa
+│   ├── 00_securityhub_scan.py
+│   ├── 01_securityhub_plan.py
+│   ├── 02_securityhub_remediate.py
+│   └── 99_securityhub_lab_setup.py   # Cria e desfaz o laboratório
+├── config/remediate_map.yaml      # O cérebro: controle -> AUTO / MANUAL / SUPPRESS
+├── scanner/                       # Detecção (somente leitura): leitor ASFF e estado real
+├── remediate/                     # Uma função pequena por controle
+├── lab_insecure/                  # CloudFormation do estado inseguro (+ atalhos deploy/destroy)
+├── tests/                         # Testes offline e expected_findings.yaml
+├── lib/                           # Clientes AWS e gravadores de saída
+├── reports/                       # Relatórios consolidados
+├── outputs/                       # Saídas versionadas (imutáveis)
+└── docs/                          # Documentação
 ```
 
-are executed.
+### Desafio da semana
+
+Adote um controle: adicione um sexto controle ao `remediate_map.yaml` (por exemplo, o GuardDuty.1), com a função em `remediate/`, o caso no `lab_insecure/` e o teste em `tests/`, e mande um pull request.
 
 ---
 
-### 🔎 Optional: Best-Effort Remediation
+## 🇺🇸 English
 
-To attempt remediation of **additional safe controls**, even when marked `MANUAL`:
+AWS Security Hub is usually treated as a dashboard. This module turns it into the **source of truth of a control plane**: it reads findings, checks the real resource, decides what to do with each one, and closes the loop by fixing the resource and marking the finding as resolved.
+
+> **Important:** this repository is created from the [AWS Security Control Plane Scripts](https://github.com/wagnermazevedo/AWS-Security-Control-Plane-Scripts) template and follows the same execution contract, output strategy and `test-control-plane.sh`.
+>
+> ⚠️ **Use only in a test account.** The lab setup intentionally disables account protections.
+
+### Controls
+
+| FSBP control | Check | Decision | Apply |
+|---|---|---|---|
+| **S3.1** | Account-level S3 Block Public Access | AUTO | Enable all 4 flags on the account |
+| **S3.8** | Bucket-level S3 Block Public Access | AUTO | Enable all 4 flags on the bucket |
+| **EC2.2** | VPC default security group has no rules | AUTO | Revoke all ingress and egress rules (`default` SG only) |
+| **EC2.7** | EBS encryption by default | AUTO | Enable in the region |
+| **IAM.4** | Root user has no access key | MANUAL | Mark the finding `NOTIFIED` with a runbook |
+
+### Execution Contract
+
+1. **Scan (read-only):** fetches `FAILED`, `ACTIVE`, `NEW`/`NOTIFIED` findings for the mapped controls and records the real resource state as `verified_state`.
+2. **Plan (non-mutating):** matches each finding to `config/remediate_map.yaml` by control ID and decides `AUTO`, `MANUAL`, `SUPPRESS` or `NO_ACTION`.
+3. **Remediate (controlled):** dry-run by default. In apply mode it re-fetches the finding, fixes the resource, verifies it, and only then calls `BatchUpdateFindings` with `RESOLVED`. Manual items become `NOTIFIED` and owned exceptions (`scp-exception` + `exception-owner` tags) become `SUPPRESSED`.
+
+### Quick start (AWS CloudShell)
 
 ```bash
-python scripts/02_securityhub_remediate.py \
-  --region us-east-1 \
-  --yaml outputs/<timestamp>/securityhub_control_plane.planned.yaml \
-  --mode dry-run \
-  --best-effort
+cd ~ && git clone https://github.com/wagnermazevedo/AWS-Security-Hub-Control-Plane.git
+cd AWS-Security-Hub-Control-Plane && pip3 install --user -r requirements.txt
+python3 scripts/99_securityhub_lab_setup.py --region us-east-1           # lab (test account only)
+~/AWS-Security-Hub-Control-Plane/test-control-plane.sh AWS-Security-Hub-Control-Plane dry-run
+python3 scripts/99_securityhub_lab_setup.py --region us-east-1 --destroy # cleanup
 ```
 
-> ⚠️ Always validate best-effort mode using dry-run first.
+### Output Strategy
 
----
+Every run writes a new `outputs/<timestamp>/` folder that is never overwritten: YAML (plan input), JSON (source of truth, raw ASFF), CSV (Athena) and `summary.md`. Offline tests: `python3 -m unittest discover -s tests -v`.
 
-### 4️⃣ Validate (Post-Remediation)
+### Repository Structure
 
-```bash
-python scripts/00_securityhub_scan.py --region us-east-1
-```
-
-Use the new YAML output to validate posture improvement.
-
----
-
-## 🔐 Supported Auto-Remediations (Release 1)
-
-* S3 Public Access Block
-* S3 Default Encryption (SSE-S3)
-* S3 Versioning
-* S3 HTTPS-only (SecureTransport)
-* Security Group world-open port removal
-* EBS Encryption by Default (regional)
-
----
-
-## 🧪 Testing
-
-The repository includes a lab script to create insecure resources:
-
-```bash
-python scripts/99_lab_insecure_resources.py --region us-east-1
-```
-
-This allows you to safely validate:
-
-* Security Hub findings
-* Rule matching
-* Remediation execution
-* Evidence lifecycle
-
----
-
-## 📊 Governance & Audit Alignment
-
-This project is designed to support:
-
-* ISO 27001 / ISO 22301
-* CIS Benchmarks
-* NIST CSF / SP 800-53
-* AWS Audit Manager evidence workflows
-
-Key audit characteristics:
-
-* Immutable evidence
-* Explicit decision records
-* Controlled execution
-* Clear before/after posture
-
----
-
-## ⚠️ Limitations
-
-* Not all findings are safe for auto-remediation
-* IAM, KMS, and logging controls often require manual approval
-* Multi-account (AWS Organizations) support is a future enhancement
-
----
-
-## 📜 License
-
-MIT License
-
----
-
-## 🤝 Contribution & Community
-
-This project is intended as a **reference implementation** and learning tool.
-
-Contributions, issues, and discussions are welcome — especially around:
-
-* New safe remediation handlers
-* Control mappings (CIS / ISO / NIST)
-* Multi-account execution patterns
-
+Same layout as the template (`scanner/`, `remediate/`, `lab_insecure/`, `reports/`, `outputs/`, `lib/`, `docs/`), plus `scripts/` (the 00/01/02/99 stages the orchestrator runs), `config/` (the remediation map) and `tests/`.

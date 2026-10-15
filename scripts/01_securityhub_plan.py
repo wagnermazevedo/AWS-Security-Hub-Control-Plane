@@ -1,115 +1,115 @@
+#!/usr/bin/env python3
+"""[01] PLAN: cruza cada finding com o remediate_map.yaml pelo ID do controle. Não chama a AWS.
+
+Decisões possíveis por item:
+  AUTO       -> o remediate corrige e marca o finding RESOLVED
+  MANUAL     -> o remediate marca o finding NOTIFIED, com nota
+  SUPPRESS   -> exceção com dono, ou controle suprimido no mapa: finding SUPPRESSED, com nota
+  NO_ACTION  -> o recurso já está conforme; o finding aguarda reavaliação
+"""
+
 import argparse
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Tuple
 
-import yaml
+import _bootstrap  # noqa: F401
 
-from lib.finding_matchers import match_any_contains
-from lib.io_utils import ensure_directory
+from lib import API_VERSION
+from lib.io import load_yaml, write_yaml
+from scanner.resources import COMPLIANT, UNKNOWN
 
-
-def load_yaml(path: str) -> Dict[str, Any]:
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
-
-
-def save_yaml(path: str, data: Dict[str, Any]) -> None:
-    ensure_directory(os.path.dirname(path))
-    with open(path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
+EXPECTED = {
+    "S3.1": "Block Public Access da conta com as 4 flags ligadas",
+    "S3.8": "Block Public Access do bucket com as 4 flags ligadas",
+    "EC2.2": "Security group default sem regras de entrada e saída",
+    "EC2.7": "Criptografia de EBS por padrão ligada na região",
+}
 
 
-def build_match_blob(item: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Create a dict similar enough for match_any_contains(), using normalized + raw content.
-    This keeps matching flexible without relying on a single schema.
-    """
-    finding = item.get("finding", {}) or {}
-    normalized = finding.get("normalized", {}) or {}
-    raw = finding.get("raw", {}) or {}
+def decide(item: Dict[str, Any], controls: Dict[str, Any], exc_cfg: Dict[str, Any]) -> Tuple[str, str, str]:
+    """Devolve (decisão, motivo, ação)."""
+    control = item.get("control")
+    rule = controls.get(control)
+    state = (item.get("verified_state") or {}).get("state")
 
-    # Prefer normalized fields, fallback to raw
-    merged = {
-        "GeneratorId": normalized.get("generatorId") or raw.get("GeneratorId"),
-        "Title": normalized.get("title") or raw.get("Title"),
-        "Description": raw.get("Description") or normalized.get("description"),
-        "Types": normalized.get("types") or raw.get("Types") or [],
-        "ProductFields": raw.get("ProductFields") or {},
-    }
-    return merged
+    if not rule:
+        return "MANUAL", f"Controle {control} não está no remediate_map.yaml", "manual"
 
+    exception = item.get("exception")
+    if exception:
+        if exception.get("owner"):
+            return ("SUPPRESS", f"Exceção ({exc_cfg.get('tag_key')}): {exception.get('justification')} "
+                                f"· dono: {exception['owner']}", "none")
+        return "MANUAL", "Exceção sem dono não vale: adicione a tag " + exc_cfg.get("owner_tag_key", "exception-owner"), "manual"
 
-def apply_rules_to_item(item: Dict[str, Any], rules: List[Dict[str, Any]]) -> Tuple[str, str, Dict[str, Any]]:
-    """
-    Returns: (decision_type, action_name, action_params)
-    decision_type: AUTO or MANUAL
-    """
-    blob = build_match_blob(item)
+    if state == COMPLIANT:
+        return "NO_ACTION", "Recurso já conforme; o finding aguarda reavaliação do Security Hub", "none"
+    if state == UNKNOWN:
+        return "MANUAL", "Não foi possível verificar o recurso: " + str((item.get("verified_state") or {}).get("error")), "manual"
 
-    for rule in rules:
-        needles = rule.get("match_contains", []) or []
-        if needles and match_any_contains(blob, needles):
-            action_name = rule.get("action", "manual")
-            action_params = rule.get("params", {}) or {}
-            reason = f"Matched rule: {rule.get('name', '<unnamed>')}"
-            # update item
-            item["decision"] = {"type": "AUTO", "reason": reason}
-            item["action"] = {"name": action_name, "params": action_params}
-            item["note"] = rule.get("note", "")
-            item["matched_rule"] = rule.get("name", "<unnamed>")
-            return "AUTO", action_name, action_params
-
-    # no match
-    item["decision"] = {"type": "MANUAL", "reason": "No remediation rule matched"}
-    item["action"] = {"name": "manual", "params": {}}
-    item.pop("matched_rule", None)
-    item.pop("note", None)
-    return "MANUAL", "manual", {}
+    decision = rule.get("decision", "MANUAL")
+    if decision == "AUTO":
+        return "AUTO", f"Regra {control}: {rule.get('title', '')}", rule.get("action", "manual")
+    if decision == "SUPPRESS":
+        return "SUPPRESS", rule.get("reason", "Controle suprimido no mapa"), "none"
+    reason = rule.get("reason", "Mapa define tratamento manual")
+    if rule.get("runbook"):
+        reason += f" · runbook: {rule['runbook']}"
+    return "MANUAL", reason, "manual"
 
 
 def main():
-    ap = argparse.ArgumentParser(
-        description="Security Hub Control Plane - Promote YAML items to AUTO/MANUAL decisions using remediate_map.yaml"
-    )
-    ap.add_argument("--input-yaml", required=True, help="Path to the YAML exported by 00_securityhub_scan.py")
-    ap.add_argument("--rules", required=True, help="Path to remediate_map.yaml")
-    ap.add_argument("--output-yaml", required=True, help="Path to write the planned YAML (YAML only)")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser(description="Security Hub Plan (não altera recursos)")
+    parser.add_argument("--input-yaml", required=True, help="YAML gerado pelo 00_securityhub_scan.py")
+    parser.add_argument("--rules", required=True, help="Caminho do config/remediate_map.yaml")
+    parser.add_argument("--output-yaml", required=True, help="Caminho do plano gerado")
+    args = parser.parse_args()
 
     doc = load_yaml(args.input_yaml)
+    if doc.get("kind") != "SecurityHubFindingsExport":
+        raise SystemExit(f"[ERRO] {args.input_yaml} não é um export de scan (kind={doc.get('kind')})")
 
-    with open(args.rules, "r", encoding="utf-8") as f:
-        rules_doc = yaml.safe_load(f) or {}
-    rules = rules_doc.get("rules", []) or []
+    rules_doc = load_yaml(args.rules)
+    controls = rules_doc.get("controls", {}) or {}
+    exc_cfg = rules_doc.get("exception", {}) or {}
 
-    items = (doc.get("spec", {}) or {}).get("items", []) or []
-    auto_count = 0
-    manual_count = 0
-
+    items = (doc.get("spec") or {}).get("items", []) or []
+    counts = {"AUTO": 0, "MANUAL": 0, "SUPPRESS": 0, "NO_ACTION": 0}
     for item in items:
-        decision, action_name, _ = apply_rules_to_item(item, rules)
+        decision, reason, action = decide(item, controls, exc_cfg)
+        counts[decision] += 1
+        item["decision"] = {"type": decision, "reason": reason}
+        item["action"] = {"name": action, "params": {}}
         if decision == "AUTO":
-            auto_count += 1
-        else:
-            manual_count += 1
+            item["expected_state"] = EXPECTED.get(item["control"], "conforme")
+            note = (controls.get(item["control"]) or {}).get("note")
+            if note:
+                item["action"]["note"] = note
 
-    # Write summary metadata (audit-friendly)
-    meta = doc.get("metadata", {}) or {}
-    doc["metadata"] = meta
-    doc["metadata"]["plannedBy"] = "01_securityhub_plan.py"
-    doc["metadata"]["planSummary"] = {
-        "totalItems": len(items),
-        "auto": auto_count,
-        "manual": manual_count,
-        "rulesFile": args.rules,
+    plan = {
+        "apiVersion": API_VERSION,
+        "kind": "SecurityHubRemediationPlan",
+        "metadata": {
+            **(doc.get("metadata") or {}),
+            "plannedBy": "01_securityhub_plan.py",
+            "sourceScan": os.path.abspath(args.input_yaml),
+            "rulesFile": args.rules,
+            "planSummary": {"totalItems": len(items), **{k.lower(): v for k, v in counts.items()}},
+        },
+        "spec": {"defaultMode": "dry-run", "items": items},
     }
+    write_yaml(args.output_yaml, plan)
 
-    save_yaml(args.output_yaml, doc)
-
-    print(f"[OK] Planned YAML written: {args.output_yaml}")
-    print(f" - total items: {len(items)}")
-    print(f" - AUTO: {auto_count}")
-    print(f" - MANUAL: {manual_count}")
+    print(f"[OK] Plano gerado: {args.output_yaml}")
+    print(f" - Total     : {len(items)}")
+    for key in counts:
+        print(f" - {key:<10}: {counts[key]}")
+    print("\n Preview do impacto (estado atual -> esperado):")
+    for item in items:
+        resource = item["finding"]["resource"]["locator"] or "conta"
+        target = item.get("expected_state") or item["decision"]["type"].lower()
+        print(f"   {item['control']:<6} {item['decision']['type']:<10} {resource:<40} "
+              f"{item['verified_state']['state']} -> {target}")
 
 
 if __name__ == "__main__":

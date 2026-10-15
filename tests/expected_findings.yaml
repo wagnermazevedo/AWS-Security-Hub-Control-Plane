@@ -1,0 +1,31 @@
+# O que o scan precisa encontrar depois do lab_insecure/deploy.sh,
+# e o que cada fase deve fazer com cada finding.
+apiVersion: securityhub.shcp/v1
+kind: ExpectedFindings
+expected:
+  - control: S3.1
+    verified_state: noncompliant
+    decision: AUTO
+    workflow_after_apply: RESOLVED
+  - control: S3.8
+    resource_contains: insecurebucket
+    verified_state: noncompliant
+    decision: AUTO
+    workflow_after_apply: RESOLVED
+  - control: S3.8
+    resource_contains: exceptionbucket
+    verified_state: noncompliant
+    decision: SUPPRESS
+    workflow_after_apply: SUPPRESSED
+  - control: EC2.2
+    verified_state: noncompliant
+    decision: AUTO
+    workflow_after_apply: RESOLVED
+  - control: EC2.7
+    verified_state: noncompliant
+    decision: AUTO
+    workflow_after_apply: RESOLVED
+  - control: IAM.4
+    verified_state: noncompliant
+    decision: MANUAL
+    workflow_after_apply: NOTIFIED
