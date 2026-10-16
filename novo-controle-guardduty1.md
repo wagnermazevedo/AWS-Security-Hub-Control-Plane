@@ -121,13 +121,3 @@ Se o arquivo tiver um ID repetido, ou um controle AUTO sem `action`, o scan e o 
 > Atenção: o GuardDuty passa a ser cobrado depois dos 30 dias de teste grátis. Em uma Organization, prefira habilitar pelo administrador delegado.
 
 ---
-
-## Versão falada para o teleprompter (opcional, uns 40 segundos)
-
-E se você quiser um controle novo, por exemplo o GuardDuty.1?
-Passo um: um arquivo novo em config/controls, com o ID, a decisão e a ação.
-Passo dois: uma função no scanner que verifica se o GuardDuty está ligado.
-Passo três: se a decisão for AUTO, um script de correção que respeita o dry-run.
-Passo quatro: o caso no laboratório e um finding falso nos testes.
-Passo cinco: rodar os testes e o ciclo de sempre, scan, plan e remediate.
-Se você esquecer a ação ou repetir um ID, o scan avisa antes de qualquer mudança.
