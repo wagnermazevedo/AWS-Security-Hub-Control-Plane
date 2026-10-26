@@ -21,6 +21,27 @@ A ideia é simples: em vez de só **olhar** para o Security Hub, a gente passa a
 >
 > ⚠️ **Rode numa conta de testes.** O laboratório desliga algumas proteções da conta de propósito, para termos o que corrigir.
 
+### Antes de tudo: clone (ou atualize) a série no AWS CloudShell
+
+O AWS CloudShell é um terminal no navegador que já vem autenticado, com a AWS CLI e o Git instalados. É o jeito mais rápido de testar a série inteira.
+
+**Clone (ou atualize) os módulos da série no `$HOME`**
+
+```bash
+cd ~
+for repo in $(gh repo list wagnermazevedo -L 100 --json name -q '.[].name' | grep -E '^AWS-.*Control-Plane'); do
+    if [ -d "$repo/.git" ]; then
+        git -C "$repo" pull --ff-only          # já clonado: só atualiza
+    else
+        gh repo clone "wagnermazevedo/$repo"   # primeira vez: clona
+    fi
+done
+```
+
+O mesmo comando serve para a primeira vez e para atualizar depois. O `--ff-only` nunca mistura mudanças: se você alterou algum arquivo localmente, o Git avisa e não mexe naquele repositório.
+
+(Se a GitHub CLI não estiver autenticada, rode `gh auth login` antes. Ou clone só o módulo que quiser com `git clone`.)
+
 ### O que você vai aprender aqui
 
 - Usar o Security Hub como **fonte da verdade**, inclusive de compliance (FSBP, CIS, NIST, PCI DSS).
@@ -185,6 +206,27 @@ Instead of just **looking** at Security Hub, we **act** on it. The code reads th
 > Part of the **AWS Security Control Plane** series, created from the [AWS Security Control Plane Scripts](https://github.com/wagnermazevedo/AWS-Security-Control-Plane-Scripts) template.
 >
 > ⚠️ **Use a test account.** The lab turns off some account protections on purpose.
+
+### Before anything: clone (or update) the series in AWS CloudShell
+
+AWS CloudShell is a browser-based terminal that comes already authenticated, with the AWS CLI and Git installed. It is the fastest way to try the whole series.
+
+**Clone (or update) the series modules in `$HOME`**
+
+```bash
+cd ~
+for repo in $(gh repo list wagnermazevedo -L 100 --json name -q '.[].name' | grep -E '^AWS-.*Control-Plane'); do
+    if [ -d "$repo/.git" ]; then
+        git -C "$repo" pull --ff-only          # already cloned: just update
+    else
+        gh repo clone "wagnermazevedo/$repo"   # first time: clone
+    fi
+done
+```
+
+The same command works the first time and for later updates. `--ff-only` never mixes changes: if you changed a file locally, Git warns you and leaves that repository alone.
+
+(If the GitHub CLI is not authenticated, run `gh auth login` first. Or clone only the module you want with `git clone`.)
 
 ### Controls
 
