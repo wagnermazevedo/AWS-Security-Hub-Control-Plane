@@ -1,6 +1,6 @@
 # AWS Security Hub as Control Plane
 
-**Youtube Link:** &lt;incluir URL&gt;
+**Youtube Link:** https://www.youtube.com/watch?v=4f2zslXf4DE;
 
 <p align="center">
   <a href="#-português">Português</a> •
